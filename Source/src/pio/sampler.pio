@@ -1,0 +1,39 @@
+.program pio_sampler
+
+  ; set RGATE=1
+  set pins, 1
+  
+.wrap_target  
+  ; MFM clock cell pos: wait for RCLK falling edge and sample clock bit position CkN from RDATA
+  ; RLL: sample data bit
+  wait 1 pin 1
+  wait 0 pin 1
+  in   pins, 1
+
+  ; MFM data cell pos: wait for RCLK rising edge and sample data bit position DN from RDATA
+  ; RLL: sample data bit
+  wait 1 pin 1
+  in   pins, 1
+  
+  ; FIFO autopush after 16 bits
+.wrap
+
+% c-sdk {
+static inline void pio_sampler_program_init(PIO pio, uint sm, uint offset)
+{
+  pio_gpio_init(pio, 3); // RGATE
+  pio_gpio_init(pio, 4); // RDATA
+  pio_gpio_init(pio, 5); // RCLOCK
+
+  pio_sm_config cfg = pio_sampler_program_get_default_config(offset);
+  
+  pio_sm_set_pindirs_with_mask(pio, sm, 8, 0x38);  // set pindirs for GPIO: 3 (out), 4 (in), 5 (in)
+  sm_config_set_set_pins(&cfg, 3, 1);              // SET base: 3 (RGATE)
+  sm_config_set_in_pins(&cfg, 4);                  // IN and WAIT base: 4 (RDATA), +1: RCLOCK
+  sm_config_set_in_shift(&cfg, false, true, 16);   // autopush 16 bits, shift left
+  sm_config_set_fifo_join(&cfg, PIO_FIFO_JOIN_RX); // only reading
+  sm_config_set_clkdiv(&cfg, 1.0f);                // full system clock
+
+  pio_sm_init(pio, sm, offset, &cfg);
+}
+%}

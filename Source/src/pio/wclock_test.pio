@@ -1,0 +1,27 @@
+.program pio_wclock_test
+
+  mov x, ~NULL         ; X=0xFFFFFFFF
+
+falling:
+  wait 1 pin 0
+  wait 0 pin 0
+  jmp x-- falling      ; decrement X each falling edge
+  
+public results:        ; called after ~100ms from native code
+  mov isr, x
+  push                 ; single 32bit value to RX FIFO
+  
+% c-sdk {
+static inline void pio_wclock_test_program_init(PIO pio, uint sm, uint offset)
+{
+  pio_gpio_init(pio, 9); // WCLOCK
+
+  pio_sm_config cfg = pio_wclock_test_program_get_default_config(offset);
+  
+  pio_sm_set_pindirs_with_mask(pio, sm, 0, 0x200); // set pindirs for GPIO: 9 (in)
+  sm_config_set_in_pins(&cfg, 9);                  // IN/WAIT base: 9 (WCLOCK)
+  sm_config_set_clkdiv(&cfg, 1.0f);                // full system clock
+
+  pio_sm_init(pio, sm, offset, &cfg);
+}
+%}

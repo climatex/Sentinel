@@ -1,0 +1,4 @@
+"Data separator" boards reused from the previous project, "Winchesterduino":
+
+WD10C20, WD10C22, WD10C23: https://github.com/climatex/Winchesterduino/tree/v1.0/Boards/Separator_WD10C22
+WD10C23 only:              https://github.com/climatex/Winchesterduino/tree/v1.0/Boards/Separator_WD10C23

@@ -1,0 +1,42 @@
+.program pio_writer
+
+  ; set WGATE=1
+  set pins, 1
+  
+.wrap_target
+  ; MFM clock cell pos: wait for WCLK falling edge and output WDATA + /LATE + /EARLY for CkN
+  ; RLL: output WDATA + /LATE + /EARLY for data bit
+  wait 1 pin 0
+  wait 0 pin 0
+  out  pins, 4
+  
+  ; MFM data cell pos: wait for WCLK rising edge and output WDATA + /LATE + /EARLY for DN
+  ; RLL: output WDATA + /LATE + /EARLY for data bit
+  wait 1 pin 0
+  out  pins, 4      
+  
+  ; FIFO autopull after 32 bits
+.wrap
+
+% c-sdk {
+static inline void pio_writer_program_init(PIO pio, uint sm, uint offset)
+{
+  pio_gpio_init(pio, 7);  // WGATE
+  pio_gpio_init(pio, 8);  // WDATA
+  pio_gpio_init(pio, 9);  // WCLOCK
+  pio_gpio_init(pio, 10); // /LATE
+  pio_gpio_init(pio, 11); // /EARLY
+  
+  pio_sm_config cfg = pio_writer_program_get_default_config(offset);
+  
+  pio_sm_set_pindirs_with_mask(pio, sm, 0xD80, 0xF80); // set pindirs for GPIO: 7 (out), 8 (out), 9 (in), 10 (out), 11 (out)
+  sm_config_set_out_pins(&cfg, 8, 4);                  // OUT base: 8 (WDATA), +1: WCLOCK (unused), +2: /LATE, +3: EARLY
+  sm_config_set_set_pins(&cfg, 7, 1);                  // SET base: 7 (WGATE)
+  sm_config_set_in_pins(&cfg, 9);                      // IN base: 9 (WCLOCK) for WAIT PIN 0
+  sm_config_set_out_shift(&cfg, false, true, 32);      // autopull 32 bits, shift left
+  sm_config_set_fifo_join(&cfg, PIO_FIFO_JOIN_TX);     // only writing
+  sm_config_set_clkdiv(&cfg, 1.0f);                    // full system clock
+
+  pio_sm_init(pio, sm, offset, &cfg);
+}
+%}
