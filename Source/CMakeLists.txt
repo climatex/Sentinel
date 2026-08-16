@@ -70,5 +70,5 @@ target_include_directories(Sentinel PRIVATE
 # requires -O3 and a sysclk of >=250MHz
 target_compile_options(Sentinel PRIVATE -O3)
 target_compile_definitions(Sentinel PRIVATE PICO_EMBED_XIP_SETUP=1)
-target_compile_definitions(bs2_default PRIVATE PICO_FLASH_SPI_CLKDIV=2)
+target_compile_definitions(bs2_default PRIVATE PICO_FLASH_SPI_CLKDIV=3)
 
