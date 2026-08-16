@@ -1,0 +1,156 @@
+diff --git a/Source/src/commands.cpp b/Source/src/commands.cpp
+index bfc5816..b78a2f0 100644
+--- a/Source/src/commands.cpp
++++ b/Source/src/commands.cpp
+@@ -2065,21 +2065,9 @@ void commandWrite(bool formatOnly)
+ 
+ void commandMicrostep()
+ {
+-  printf(str_MicrostepDescription);
+-  
+-  // too bad, we're out of pins here that can sink 48 mA :)
+-  if (hdd.getParams()->UseReduceWriteCurrent)
+-  {
+-    printf(str_MicrostepRWCInUse);
+-    return;
+-  }
+-  if (hdd.getParams()->Heads > 8)
+-  {
+-    printf(str_MicrostepTooManyHeads, hdd.getParams()->Heads);
+-    return;
+-  }
+-  
++  printf(str_MicrostepDescription);  
+   printf(str_EscGoBack);
++  
+   uint8_t microsteps = 0;
+   const uint8_t microstepsMax = 8; // an ST225 has eight algorithms maximum
+   while(true)
+diff --git a/Source/src/hdd.cpp b/Source/src/hdd.cpp
+index 5047a9b..0a2e624 100644
+--- a/Source/src/hdd.cpp
++++ b/Source/src/hdd.cpp
+@@ -9,6 +9,7 @@ extern volatile bool g_SeekComplete;
+ HDD::HDD()
+ {
+   m_SeekForward = false;
++  m_RecoveryMode = false;
+   m_ShiftRegister = 0;
+   m_PhysicalCylinder = 0;
+   m_PhysicalHead = 0;
+@@ -292,10 +293,10 @@ bool HDD::seekDrive(uint16_t toCylinder, uint8_t toHead)
+   return true;
+ }
+ 
+-// reusing the HDSEL3 line wired up to the RECOVERY MODE signal of the hard drive
++// GPIO1 connected to a 1K resistor to the base of a BJT NPN; emitter to ground, collector to /RECOVERYMODE (usually pin 16 of disk control cable)
+ void HDD::microStep(bool perform)
+ {
+-  if (!m_MicroSteps || (m_Params.Heads > 8) || m_Params.UseReduceWriteCurrent)
++  if (!m_MicroSteps)
+   {
+     return;
+   }  
+@@ -337,19 +338,19 @@ void HDD::testMicrostepping()
+ 
+ void HDD::microStepInternal(bool perform)
+ {
+-  if (!m_MicroSteps || (m_Params.Heads > 8) || m_Params.UseReduceWriteCurrent)
++  if (!m_MicroSteps)
+   {
+     return;
+   }  
+   
+   if (!perform)
+   {
+-    if (m_ShiftRegister & 8)
++    if (m_RecoveryMode)
+     {
+       // leave recovery mode
+       g_SeekComplete = false;
+-      m_ShiftRegister &= 0xF7;
+-      updateShiftRegister();
++      m_RecoveryMode = false;
++      gpio_put(1, m_RecoveryMode);
+       sleep_ms(SLOWSEEK_SRT_MS);
+       
+       // disk must assert seek complete
+@@ -367,10 +368,10 @@ void HDD::microStepInternal(bool perform)
+   }
+    
+   // enter recovery mode if not already in it
+-  if (!(m_ShiftRegister & 8))
++  if (!m_RecoveryMode)
+   {
+-    m_ShiftRegister |= 8;
+-    updateShiftRegister();
++    m_RecoveryMode = true;
++    gpio_put(1, m_RecoveryMode);
+     sleep_us(1); 
+   }
+   
+diff --git a/Source/src/hdd.h b/Source/src/hdd.h
+index 5cc8ce0..cfffd9b 100644
+--- a/Source/src/hdd.h
++++ b/Source/src/hdd.h
+@@ -78,4 +78,5 @@ private:
+   uint16_t m_PhysicalCylinder;
+   uint8_t m_PhysicalHead;
+   uint8_t m_MicroSteps;
++  bool m_RecoveryMode;
+ };
+\ No newline at end of file
+diff --git a/Source/src/main.cpp b/Source/src/main.cpp
+index a955997..ac938b0 100644
+--- a/Source/src/main.cpp
++++ b/Source/src/main.cpp
+@@ -174,20 +174,21 @@ int main()
+   
+   srand(get_rand_32());
+    
+-  // GPIOs used: 2-22, 26-28
+-  gpio_init_mask(0x1C7FFFFC);
++  // GPIOs used: 1-22, 26-28
++  gpio_init_mask(0x1C7FFFFE);
+ 
+   // set initial states of GPIOs
+   // outputs:
+   // 28 (separator: SC), 27 (74HC595: SER), 26 (74HC595: /OE), 22 (74HC595: RCLK), 21 (74HC595: SRCLK), 12 (separator: WPCEN), 
+-  // 11 (separator: /EARLY), 10 (separator: /LATE), 8 (separator: WDATA), 7 (separator: WGATE), 3 (separator: RGATE)
++  // 11 (separator: /EARLY), 10 (separator: /LATE), 8 (separator: WDATA), 7 (separator: WGATE), 3 (separator: RGATE),
++  // 1 (drive: RECOVERYMODE through a transistor)
+   // inputs:
+   // 20 (drive: /WFAULT), 19 (SD: MOSI), 18 (SD: SCK), 17 (SD: SCS), 16 (SD: MISO), 15 (drive: /READY), 14 (drive: /TRK0),
+   // 13 (drive: /SC), 9 (separator: WCLOCK), 6 (drive: /INDEX), 5 (separator: RCLOCK), 4 (separator: RDATA), 2 (separator: DRUN)
+-  gpio_set_dir_masked(0x1C7FFFFC, 0x1C601D88);
++  gpio_set_dir_masked(0x1C7FFFFE, 0x1C601D8A);
+ 
+   // drive outputs: 26 (74HC595: /OE), 11 (separator: /EARLY), 10 (separator: /LATE) high; and the rest of the outputs low
+-  gpio_put_masked(0x1C601D88, 0x4000C00);
++  gpio_put_masked(0x1C601D8A, 0x4000C00);
+ 
+   // set initial states of the output shift register 74HC595
+   // (Q0: HDSEL0, Q1: HDSEL1, Q2: HDSEL2, Q3: HDSEL3, Q4: STEP, Q5: DIR, Q6: DS, Q7: RLL/MFM)
+diff --git a/Source/src/stringtable.h b/Source/src/stringtable.h
+index a86d0bd..7df9eed 100644
+--- a/Source/src/stringtable.h
++++ b/Source/src/stringtable.h
+@@ -200,15 +200,13 @@ STRINGTABLE str_WriteDetails[]            = "\nWill format %u cylinders and writ
+ STRINGTABLE str_WriteDetailsFormat[]      = "\nWill format %u cylinders.\n";
+ 
+ // microstepping command
+-STRINGTABLE str_MicrostepDescription[]    = "\nReuses disk control cable pin 2 (/HDSEL3) to enable /RECOVERYMODE.\n"
+-                                            "Use this to mitigate disk data recording that has drifted over time:\n"
+-                                            "wire /HDSEL3 to the recovery mode signal of the disk connector.\n"
++STRINGTABLE str_MicrostepDescription[]    = "\nUse this to mitigate disk data recording that has drifted over time:\n"
++                                            "wire GPIO1 to a BJT NPN through a 1K resistor to base, emitter to GND,\n"
++                                            "collector to the recovery mode signal of the disk control cable.\n"
+                                             "Most likely, a jumper will need to be set for proper operation.\n";
+ STRINGTABLE str_MicrostepCount[]          = "Microsteps to execute before reads (0-%u, 0: disable): ";
+ STRINGTABLE str_MicrostepTesting[]        = "\nTesting recovery mode...";
+ STRINGTABLE str_MicrostepReseekOff[]      = "NOTE: re-seeking after sector errors turned off until board reset.\n";
+-STRINGTABLE str_MicrostepRWCInUse[]       = "\nCannot reuse /HDSEL3 if reduced write current signal is used.\n";
+-STRINGTABLE str_MicrostepTooManyHeads[]   = "\nCannot reuse /HDSEL3; %u disk drive heads configured.\n";
+ STRINGTABLE str_MicrostepOff[]            = "OFF";
+ STRINGTABLE str_MicrostepSteps[]          = "%u STEPS";
+ 
