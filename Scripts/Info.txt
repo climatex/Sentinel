@@ -1,0 +1,9 @@
+Simple scripts to analyze disk data obtained from the "Raw disk operations" menu:
+
+mfmdecoder.py: Sync to each 0xA1 with dropped Clk2 bit; output NRZ bytes
+mfmencoder.py: Output MFM encoded data, drop Clk2 bit at each file byte offset specified by SYNC_OFFSETS
+rlldecoder.py: Sync to each RLL sync mark 0x8090; output NRZ bytes. Specify what coding table to use (WD or IBM/Seagate)
+rllencoder.py: Output 2,7-RLL encoded data; insert RLL 0x8090 at file byte offsets specified by SYNC_OFFSETS. Specify WD/IBM
+
+mfm_to_tran.py: Convert the MFM bitstream (.mfm) to David Gesswein's transition file for use with mfm_util.
+                Specify: --num-cyl, --num-head, --track-bytes
