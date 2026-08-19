@@ -235,7 +235,7 @@ void commandAutodetect()
       {
         printf(str_DetectLikely);
       }
-      printf("WD (%s)", hdd.isSeparatorRLL() ? "RLL" : "MFM");
+      printf("WD (%s)", hdd.isSeparatorRLL() ? str_RLL : str_MFM);
       printf(str_DetectCRC);
       if (!dataCrcBits)
       {
@@ -346,45 +346,8 @@ void commandRawdisk()
     return;
   }
   
-  printf("\n");
-  
-  // compute average time from /INDEX to /INDEX
-  uint64_t averager = 0;
-  const uint16_t samples = 450;
-  
-  hdd.selectDrive();
-  for (uint16_t sample = 0; sample < samples; sample++)
-  {
-    bool checkReady = hdd.checkReadyWriteFault();
-    bool startOfTrack = true;
-    if (!checkReady || !endec.waitForTrackStart())
-    {
-      printf(str_Error); printf("\n"); printf(hdd.getLastResultMessage()); printf("\n");
-      return;
-    }
-    
-    absolute_time_t t1 = get_absolute_time();
-    
-    // abort on not ready, write fault or timeout
-    while (!gpio_get(15) &&
-           gpio_get(20) && 
-           (startOfTrack || gpio_get(6)))
-    {
-      if (gpio_get(6)) // /INDEX is high, reset start of track flag
-      {
-        startOfTrack = false;
-      }
-    }    
-    
-    absolute_time_t t2 = get_absolute_time();
-    averager += absolute_time_diff_us(t1,t2);
-    
-    printf(str_RawdiskAveraging, ((sample*1.0f) / (samples*1.0f))*100.0f);
-  }
-  hdd.selectDrive(false);
-  
-  uint32_t averageBytes = ((g_WclockRate / 8.0) * ((averager * 1.0) / (samples * 1.0)) * 2.0); // x2, sampling both RCLOCK/WCLOCK edges
-  printf(str_RawdiskAveraged, averageBytes, str_Bytes);
+  const uint16_t nominalTrackBytes = (uint16_t)((g_WclockRate * 16666.67) / 8.0) * 2; // x2, sampling both RCLOCK/WCLOCK edges
+  printf(str_RawdiskTrackLength, nominalTrackBytes, str_Bytes);
   
   // ask to customize maximum number of bytes read
   printf(str_EscGoBack);
@@ -410,11 +373,11 @@ void commandRawdisk()
   }
   if (!channelBytes)
   {
-    channelBytes = averageBytes;
+    channelBytes = nominalTrackBytes;
   }
   
   // data separator mode to choose
-  printf(str_ChooseSeparatorMode, ((int)g_WclockRate == 5) ? "MFM" : "RLL");
+  printf(str_ChooseSeparatorMode, ((int)g_WclockRate == 5) ? str_MFM : str_RLL);
   char key = toupper(readKey("MR\e"));        
   if (key == '\e')
   {
@@ -432,11 +395,10 @@ void commandRawdisk()
     hdd.seekDrive(0, 0);
     hdd.selectDrive(false);
     
-    char mfmRll[] = "MFM";  
+    const char* mfmRll = hdd.isSeparatorRLL() ? str_RLL : str_MFM;
     char fileExt[] = ".mfm";
     if (hdd.isSeparatorRLL())
     {
-      strcpy(mfmRll, "RLL");
       strcpy(fileExt, ".rll");
     }
     printf(str_RawdiskMenu, mfmRll, mfmRll);
@@ -637,6 +599,27 @@ void commandRawdiskOperation(bool readDiskIntoFile, const char* ext, uint16_t ch
         endec.prepareWriteDMA(dmaBuffer.data(), dmaBuffer.size());
       }
       
+      // disk read: assert data separator RGATE and wait for RDATA to start sampling nonzero words
+      else
+      {
+        endec.setReadGate(true);
+        
+        uint16_t fifoWord = 0;
+        const absolute_time_t deadline = make_timeout_time_us(TIMEOUT_DISK_ROTATION_US);
+        while (!fifoWord)
+        {
+          if (!endec.readFifo16(fifoWord) || time_reached(deadline))
+          {
+            endec.setReadGate(false);
+            hdd.setLastResult(HDD_STATUS_TIMEOUT);
+            printf(hdd.getLastResultMessage());
+            printf("\n");
+            sdCloseFile();
+            return;
+          }
+        }          
+      }
+      
       // wait for INDEX for both read and write
       bool startOfTrack = true;
       if (!endec.waitForTrackStart())
@@ -651,10 +634,10 @@ void commandRawdiskOperation(bool readDiskIntoFile, const char* ext, uint16_t ch
       // disk dump
       if (readDiskIntoFile)
       {
-        uint16_t bytesRead = 0;
-        
-        // break on not ready, write fault, target reached or FIFO read error        
-        endec.setReadGate(true);        
+        uint16_t bytesRead = 0;        
+        pio_sm_clear_fifos(pio0, 0); // flush out unused words while waiting for the track to start
+
+        // break on not ready, write fault, target reached or FIFO read error
         while ((bytesRead < channelBytes) && !gpio_get(15) && gpio_get(20))
         {
           uint16_t fifoWord = 0;
@@ -666,10 +649,6 @@ void commandRawdiskOperation(bool readDiskIntoFile, const char* ext, uint16_t ch
             printf("\n");
             sdCloseFile();
             return;
-          }
-          if (!fifoWord)
-          {
-            continue; // sampling zero words, wait for RDATA to wake up
           }
                     
           // in pairs

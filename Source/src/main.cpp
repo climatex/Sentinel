@@ -290,7 +290,7 @@ int main()
       printf(str_EscGoBack);
       
       printf("\n");
-      printf(str_ChooseSeparatorMode, ((int)g_WclockRate == 5) ? "MFM" : "RLL");
+      printf(str_ChooseSeparatorMode, ((int)g_WclockRate == 5) ? str_MFM : str_RLL);
       key = toupper(readKey("MR\e"));
       if (key == '\e') { printf("\n"); continue; }
       printf(str_EchoKey, key);

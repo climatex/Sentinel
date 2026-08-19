@@ -17,6 +17,8 @@ STRINGTABLE str_Yes[]                     = "yes";
 STRINGTABLE str_No[]                      = "no";
 STRINGTABLE str_OK[]                      = "OK";
 STRINGTABLE str_Error[]                   = "error";
+STRINGTABLE str_MFM[]                     = "MFM";
+STRINGTABLE str_RLL[]                     = "RLL";
 STRINGTABLE str_Continue[]                = "ENTER to continue...";
 STRINGTABLE str_ContinueAbort[]           = "ENTER: continue, Esc: abort...";
 STRINGTABLE str_Abort[]                   = "Press Esc now to abort."; 
@@ -48,7 +50,7 @@ STRINGTABLE str_SectorSizeBytes[]         = "Sector size: %u bytes\n";
 
 // startup
 STRINGTABLE str_Splash[]                  = "Sentinel (c) 2026 J. Bogin, https://boginjr.com\n\n"
-                                            "Build date:     16 Aug 2026\n";
+                                            "Build date:     19 Aug 2026\n";
 STRINGTABLE str_SystemInfo[]              = "System clock:   %u MHz (Vreg %.1f V; %d \u00B0C)\n";
 STRINGTABLE str_MemoryUsage[]             = "Memory usage:   initial %uKB of 512KB RAM\n"
                                             "                %uKB of 4MB flash\n";
@@ -233,8 +235,7 @@ STRINGTABLE str_DosMounted[]              = "%u MB partition mounted.\n\n";
 STRINGTABLE str_DosCommands[]             = "Supported commands:\nCD, DIR, MKDIR, RMDIR, DEL, HEXDUMP, TYPE, TYPEINTO, EXIT.\n\n";
 
 // raw disk command
-STRINGTABLE str_RawdiskAveraging[]        = "\rAveraging... %.f %% ";
-STRINGTABLE str_RawdiskAveraged[]         = "\rRaw MFM/RLL track bitstream length for this disk, on average: %lu %s\n";
+STRINGTABLE str_RawdiskTrackLength[]      = "\nNominal track bitstream length: %lu %s\n";
 STRINGTABLE str_RawdiskCustomTrackLen[]   = "Bytes to use each track operation (0: use above): ";
 STRINGTABLE str_RawdiskCustomTrackOver[]  = "\nMust be below 64K\n\n";
 STRINGTABLE str_RawdiskDescription[]      = "\nSamples RDATA / outputs WDATA every RCLOCK / WCLOCK edge (falling and rising),"

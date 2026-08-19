@@ -21,7 +21,7 @@
 // encoder/decoder
 #define DEFAULT_MFM_SYNC_PATTERN    0x4489  // MFM 0xA1 with clk=0x0A instead of 0x0E (Ck2: 0), intertwinned as Ck7,D7,Ck6,D6...Ck0,D0
 #define DEFAULT_RLL_SYNC_PATTERN    0x8090  // RLL 2,7 1000000010010000 which violates coding table rules
-#define MAX_SYNC_SEARCH_WORDS       128     // maximum number of FIFO words to search for sync pattern
+#define MAX_SYNC_SEARCH_WORDS       192     // maximum number of FIFO words to search for sync pattern
 #define MAX_SPT_LIMIT               50      // maximum number of sectors per track supported, for all sector sizes
 
 // low-level formats
