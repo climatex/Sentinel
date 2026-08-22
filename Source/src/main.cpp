@@ -161,10 +161,11 @@ int main()
 {
   // :)
   vreg_disable_voltage_limit();
-  vreg_set_voltage(VREG_VOLTAGE_1_10);
-  set_sys_clock_khz(250000, true);
+  vreg_set_voltage(VREG_VOLTAGE_1_40);
+  set_sys_clock_khz(400000, true);
   clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS, clock_get_hz(clk_sys), clock_get_hz(clk_sys));
   // minimum for proper operation (especially RLL): 250MHz with gcc -O3
+  // for some formats that are harder to sync (Xebec), >= 400MHz recommended 
   // 250MHz: 1.10V, PICO_FLASH_SPI_CLKDIV=3 (flash @  83MHz)
   // 300MHz: 1.20V, PICO_FLASH_SPI_CLKDIV=3 (flash @ 100MHz)
   // 400MHz: 1.40V, PICO_FLASH_SPI_CLKDIV=4 (flash @ 100MHz)

@@ -262,8 +262,13 @@ bool XebecAdaptec::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* ov
     return false;
   }
   
+  uint16_t cylinder = overrideCyl ? *overrideCyl : hdd.getPhysicalCylinder();
+  uint8_t head = overrideHead ? *overrideHead : hdd.getPhysicalHead();
+  
   // sector has skew, was it computed?
-  if (m_AnalyzeSkew == (uint16_t)-1)
+  if ((m_AnalyzeSkew == (uint16_t)-1) ||
+      (cylinder != m_AnalyzeActualCylNumber) ||
+      (head != m_AnalyzeActualHdNumber))
   {
     uint8_t spt;
     uint8_t start;
@@ -278,9 +283,6 @@ bool XebecAdaptec::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* ov
   {
     sector = (sector + m_AnalyzeSkew) % m_AnalyzeSectorsPerTrack;  
   }
-  
-  uint16_t cylinder = overrideCyl ? *overrideCyl : hdd.getPhysicalCylinder();
-  uint8_t head = overrideHead ? *overrideHead : hdd.getPhysicalHead();
   
   // 01 consumed by findSync(), 00, 00/C9, 512 bytes, 4 byte CRC
   size_t dataFieldCount = 518;  
@@ -396,8 +398,13 @@ bool XebecAdaptec::writeSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* o
     return false;
   }
   
+  uint16_t cylinder = overrideCyl ? *overrideCyl : hdd.getPhysicalCylinder();
+  uint8_t head = overrideHead ? *overrideHead : hdd.getPhysicalHead();
+  
   // sector has skew, was it computed?
-  if (m_AnalyzeSkew == (uint16_t)-1)
+  if ((m_AnalyzeSkew == (uint16_t)-1) ||
+      (cylinder != m_AnalyzeActualCylNumber) ||
+      (head != m_AnalyzeActualHdNumber))
   {
     uint8_t spt;
     uint8_t start;
@@ -451,9 +458,6 @@ bool XebecAdaptec::writeSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* o
   std::vector<uint32_t> dmaBuffer;
   endec.encodeMFM(data.data(), data.size(), clockBits, dmaBuffer);
   endec.prepareWriteDMA(dmaBuffer.data(), dmaBuffer.size());  
-  
-  uint16_t cylinder = overrideCyl ? *overrideCyl : hdd.getPhysicalCylinder();
-  uint8_t head = overrideHead ? *overrideHead : hdd.getPhysicalHead();  
 
   bool found = false;  
   for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT; locateAttempt++)

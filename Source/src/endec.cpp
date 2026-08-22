@@ -216,9 +216,16 @@ uint8_t ENDEC::findSync(uint16_t pattern, uint16_t& partial, uint8_t& bitShift)
     return HDD_STATUS_TIMEOUT;
   }
   
-  // maximum of how many 16bit FIFO words to obtain before failing
-  for (uint16_t attempt = 0; attempt < MAX_SYNC_SEARCH_WORDS; attempt++)
+  // keep PLL locked during the rest of the rotation
+  const int indexCount = g_IndexCount;
+  while (g_IndexCount == indexCount)
   {
+    // avoid waiting for next INDEX if the disk has problems
+    if (!hdd.checkReadyWriteFault())
+    {
+      return hdd.getLastResult();
+    }
+    
     // low word (word2): most recently obtained bits
     uint32_t window = ((uint32_t)word1 << 16) | word2;
     

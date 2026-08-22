@@ -50,7 +50,7 @@ STRINGTABLE str_SectorSizeBytes[]         = "Sector size: %u bytes\n";
 
 // startup
 STRINGTABLE str_Splash[]                  = "Sentinel (c) 2026 J. Bogin, https://boginjr.com\n\n"
-                                            "Build date:     19 Aug 2026\n";
+                                            "Build date:     22 Aug 2026\n";
 STRINGTABLE str_SystemInfo[]              = "System clock:   %u MHz (Vreg %.1f V; %d \u00B0C)\n";
 STRINGTABLE str_MemoryUsage[]             = "Memory usage:   initial %uKB of 512KB RAM\n"
                                             "                %uKB of 4MB flash\n";

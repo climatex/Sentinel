@@ -102,9 +102,12 @@ void LLF::calculateInterleave(std::vector<uint8_t>& sectors, uint8_t& sectorsPer
   // verify
   if (interleave)
   {
+    bool verified[256] = {false};
+    verified[0] = true; // startSector
+    
     uint8_t pos = 0;
     uint8_t expected = startSector + 1;
-    for (; expected < startSector + sectorsPerTrack; expected++)
+    for (uint8_t i = 1; i < sectorsPerTrack; i++)
     {
       pos += interleave;
       if (pos >= sectorsPerTrack)
@@ -112,11 +115,23 @@ void LLF::calculateInterleave(std::vector<uint8_t>& sectors, uint8_t& sectorsPer
         pos -= sectorsPerTrack;
       }        
 
+      while (verified[pos])
+      {
+        pos++;
+        if (pos >= sectorsPerTrack)
+        {
+          pos = 0; // table wraps around from start
+        }
+      }
+      
       if (sectors[pos] != expected)
       {
         interleave = 0;
         return;
       }  
+      
+      verified[pos] = true;
+      expected++;
     }
   }  
 }
