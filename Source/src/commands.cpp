@@ -477,17 +477,22 @@ void commandRawdiskOperation(bool readDiskIntoFile, const char* ext, uint16_t ch
   }
   
   // show warning before write
+  bool writeIgnoreIndex = false;
   if (!readDiskIntoFile)
   {
     printf(str_RawdiskWriteWarning, channelBytes, endCylinder-startCylinder+1, hdd.getParams()->Heads);
-    printf(str_ContinueAbort);
-    char key = readKey("\r\e");
-    printf(str_DeleteLine);
+    printf(str_RawdiskWriteIndex, channelBytes);
+    char key = toupper(readKey("FS\e"));
     if (key == '\e')
     {
+      printf("\n");
       sdCloseFile();
       return;
     }
+    
+    // writes whole track buffer regardless of end-of-track
+    printf(str_EchoKey, key);
+    writeIgnoreIndex = (key == 'F');
   }
   
   // do I/O
@@ -688,10 +693,10 @@ void commandRawdiskOperation(bool readDiskIntoFile, const char* ext, uint16_t ch
       // disk write
       else
       {
-        endec.setWriteGate(true); // until not ready, write fault, end of track or transfer done
+        endec.setWriteGate(true); // until not ready, write fault, end of track (if not ignored) or transfer done
         while (!gpio_get(15) &&
                gpio_get(20) &&
-               (startOfTrack || gpio_get(6)) &&
+               (writeIgnoreIndex || (startOfTrack || gpio_get(6))) &&
                !pio_sm_is_tx_fifo_empty(pio0, 1))
         {
           if (gpio_get(6)) // /INDEX went high, reset start of track flag

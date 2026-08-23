@@ -50,7 +50,7 @@ STRINGTABLE str_SectorSizeBytes[]         = "Sector size: %u bytes\n";
 
 // startup
 STRINGTABLE str_Splash[]                  = "Sentinel (c) 2026 J. Bogin, https://boginjr.com\n\n"
-                                            "Build date:     22 Aug 2026\n";
+                                            "Build date:     23 Aug 2026\n";
 STRINGTABLE str_SystemInfo[]              = "System clock:   %u MHz (Vreg %.1f V; %d \u00B0C)\n";
 STRINGTABLE str_MemoryUsage[]             = "Memory usage:   initial %uKB of 512KB RAM\n"
                                             "                %uKB of 4MB flash\n";
@@ -235,15 +235,16 @@ STRINGTABLE str_DosMounted[]              = "%u MB partition mounted.\n\n";
 STRINGTABLE str_DosCommands[]             = "Supported commands:\nCD, DIR, MKDIR, RMDIR, DEL, HEXDUMP, TYPE, TYPEINTO, EXIT.\n\n";
 
 // raw disk command
-STRINGTABLE str_RawdiskTrackLength[]      = "\nNominal track bitstream length: %lu %s\n";
+STRINGTABLE str_RawdiskTrackLength[]      = "\nNominal track bitstream length: %lu %s at 3600 RPM\n";
 STRINGTABLE str_RawdiskCustomTrackLen[]   = "Bytes to use each track operation (0: use above): ";
 STRINGTABLE str_RawdiskCustomTrackOver[]  = "\nMust be below 64K\n\n";
 STRINGTABLE str_RawdiskDescription[]      = "\nSamples RDATA / outputs WDATA every RCLOCK / WCLOCK edge (falling and rising),"
                                             "\nfrom INDEX until %lu bytes per track are reached."
                                             "\nReduced write current and write precompensation applied as configured.\n";
-STRINGTABLE str_RawdiskWriteWarning[]     = "\nBe careful with this function, this is experimental.\n"
+STRINGTABLE str_RawdiskWriteWarning[]     = "\nBe careful with this function, it is experimental. Press Esc to quit.\n"
                                             "Make sure the same track length (%u bytes), cylinders (%u) and heads (%u)\n"
-                                            "match the file. Otherwise, sectors or entire tracks may drift or overlap.\n\n";                                            
+                                            "match the file. Otherwise, sectors or entire tracks may drift or overlap.\n";
+STRINGTABLE str_RawdiskWriteIndex[]       = "\nWrite (F)ull %u bytes each track or (S)top if INDEX comes first?: ";
 STRINGTABLE str_RawdiskMenu[]             = "\n(R)ead disk into raw %s file\n"
                                             "(W)rite disk from raw %s file\n"
                                             "(B)ack to the main menu\n";
