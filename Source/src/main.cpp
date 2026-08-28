@@ -9,7 +9,7 @@ ENDEC endec;
 
 // modified by global GPIO callback
 volatile bool g_SeekComplete = false;
-volatile int g_IndexCount = 0;
+volatile uint64_t g_IndexCount = 0;
 
 // PIO offsets
 extern const uint g_PioSamplerOffset    = pio_add_program(pio0, &pio_sampler_program);     // SM 0
@@ -272,12 +272,12 @@ int main()
     hdd.setSeparatorRLL(false); // MFM by default
     printf("\n");
     
-    strcat(menuOptions, "12345ABCD");
+    strcat(menuOptions, "123456ABCDE");
     printf(str_MainMenu);
     if (hdd.getParams()->UseLandingZone) // add park option
     {
       printf(str_MainMenuOptionPark);
-      strcat(menuOptions, "E");
+      strcat(menuOptions, "F");
     }
     printf("\n\n");
     printf(str_ChooseOption);
@@ -321,8 +321,27 @@ int main()
       }
       
       formatMenu(format);
-    }    
+    }
     else if (key == '2')
+    {
+      // was there a reason?
+      if (hdd.getParams()->Cylinders == 1)
+      {
+        printf(str_OptSgInvalidCylCount);
+        continue;
+      }
+      
+      format = new Seagate;
+      
+      // inform about nonstandard cylinder 0      
+      printf(str_OptSgReservedCylNote);
+      printf(str_Continue);
+      char key = readKey("\r");
+      printf(str_DeleteLine);
+      
+      formatMenu(format);
+    }
+    else if (key == '3')
     {
       format = new OMTI;
       
@@ -334,7 +353,7 @@ int main()
       
       formatMenu(format);
     }
-    else if (key == '3')
+    else if (key == '4')
     {
       format = new XebecAdaptec;
       
@@ -349,12 +368,12 @@ int main()
       
       formatMenu(format);
     }
-    else if (key == '4')
+    else if (key == '5')
     {
       format = new HDC9224;
       formatMenu(format);
     }
-    else if (key == '5')
+    else if (key == '6')
     {
       format = new SM1040;
       formatMenu(format);
@@ -376,6 +395,10 @@ int main()
       commandSeekTest();
     }
     else if (key == 'E')
+    {
+      commandRpmTest();
+    }
+    else if (key == 'F')
     {
       commandPark();
     }

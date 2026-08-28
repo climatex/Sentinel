@@ -16,6 +16,7 @@ void commandRawdiskOperation(bool readDiskIntoFile, const char* ext, uint16_t ch
 
 LLF* llf;
 WD* wd;
+Seagate* seagate;
 OMTI* omti;
 XebecAdaptec* xebecAdaptec;
 HDC9224* hdc9224;
@@ -28,7 +29,8 @@ void formatMenu(LLF* format)
 
   // -fno-rtti, no dynamic_cast
   wd = NULL;
-  omti = NULL;
+  seagate = NULL;
+  omti = NULL;  
   xebecAdaptec = NULL;
   hdc9224 = NULL;  
   sm1040 = NULL;
@@ -36,6 +38,9 @@ void formatMenu(LLF* format)
   {
   case LLF::FormatType::WD:
     wd = (WD*)llf;
+    break;
+  case LLF::FormatType::Seagate:
+    seagate = (Seagate*)llf;
     break;
   case LLF::FormatType::OMTI:
     omti = (OMTI*)llf;
@@ -333,6 +338,27 @@ void commandAutodetect()
   delete sm1040;
   sm1040 = NULL;
   
+  // Seagate ST21/22 - analyze cylinder 1
+  if (hdd.getParams()->Cylinders > 1)
+  {
+    hdd.seekDrive(1, 0);
+    seagate = new Seagate;
+    if (seagate->analyzeTrack(MAX_SPT_LIMIT, false, sectorsPerTrack, startSector, sectorSizeBytes, interleave))
+    {
+      printf(str_DetectFormat);
+      printf("Seagate");
+          
+      printf("\n");
+      delete seagate;
+      seagate = NULL;
+      return;
+    }
+
+    delete seagate;
+    seagate = NULL; 
+    hdd.seekDrive(0, 0);
+  }
+  
   // we tried :)
   printf(str_DetectNoFormat);  
 }
@@ -340,11 +366,20 @@ void commandAutodetect()
 // launched from the main menu
 void commandRawdisk()
 {
+  hdd.selectDrive();
+  
   // memory card required
   if (!sdDetect())
   {
     return;
   }
+  
+  if (!hdd.checkReadyWriteFault())
+  {
+    printf("\n"); printf(hdd.getLastResultMessage()); printf("\n");
+    return; 
+  }  
+  hdd.selectDrive(false);
   
   const uint16_t nominalTrackBytes = (uint16_t)((g_WclockRate * 16666.67) / 8.0) * 2; // x2, sampling both RCLOCK/WCLOCK edges
   printf(str_RawdiskTrackLength, nominalTrackBytes, str_Bytes);
@@ -892,13 +927,114 @@ void commandSeekTest()
     printf(str_SeektestRandom);
     printf(ellipsis);
     
+    // during random seeks, compute average access time
+    uint64_t averager = 0;
+    
     for (count = 0; count < randomTests; count++)
     {
+      const absolute_time_t t1 = get_absolute_time();
       hdd.seekDrive(rand() % (endCylinder - startCylinder + 1) + startCylinder, 0);
+      const absolute_time_t t2 = get_absolute_time();
+      averager += absolute_time_diff_us(t1, t2);
+    }
+    averager /= randomTests;
+    
+    printf(str_SeektestRandomAvgAccess, randomTests, averager / 1000.0);
+  }
+}
+
+// launched from the main menu
+void commandRpmTest()
+{
+  char key;  
+  printf(str_EscGoBack);
+  hdd.selectDrive();
+  
+  char percent[10] = {0};
+  double perc = 0.0;
+  double minRpm = DBL_MAX;
+  double maxRpm = DBL_MIN;
+  double accumulated = 0.0;
+  uint64_t loops = 0;
+  
+  // difference from the nominal 3600 RPM in percent
+  auto nominalDifference = [&](double val)
+  {
+    perc = (round((val / 3600.0) * 100000.0) / 1000.0) - 100.0;
+    snprintf(percent, sizeof(percent), perc > 0 ? "+%.3f" : "%.3f", perc);    
+  };  
+  
+  const absolute_time_t startTime = get_absolute_time();  
+  while(true)
+  {
+    key = readKey("\e", false); // esc to break
+    if (key == '\e')
+    {
+      break;
     }
     
-    printf("\n");
+    bool startOfTrack = true;
+    if (!endec.waitForTrackStart())
+    {
+      printf(str_DeleteLine);
+      printf(hdd.getLastResultMessage());
+      break;
+    }
+    
+    const absolute_time_t t1 = get_absolute_time();
+    while (!gpio_get(15) && // check ready, write fault, end of track
+           gpio_get(20) &&
+           (startOfTrack || gpio_get(6)))
+    {
+      if (gpio_get(6)) // /INDEX went high, reset start of track flag
+      {
+        startOfTrack = false;
+      }
+    }
+    const absolute_time_t t2 = get_absolute_time();
+
+    if (!hdd.checkReadyWriteFault())
+    {
+      printf(str_DeleteLine);
+      printf(hdd.getLastResultMessage());
+      break;
+    }
+    
+    const double rpm = round(600000000.0 / absolute_time_diff_us(t1, t2)) / 10.0;    
+    if (rpm < minRpm)
+    {
+      minRpm = rpm;
+    }
+    if (rpm > maxRpm)
+    {
+      maxRpm = rpm;
+    }
+    accumulated += rpm;
+    nominalDifference(rpm);
+    
+    printf(str_DeleteLine);
+    printf(str_RpmtestRpm, rpm, percent);
+    loops++;
   }
+  const absolute_time_t endTime = get_absolute_time();
+  
+  if (accumulated && (minRpm != DBL_MAX) && (maxRpm != DBL_MIN))
+  {
+    nominalDifference(minRpm);
+    printf(str_RpmtestMinimum, (uint32_t)round(absolute_time_diff_us(startTime, endTime) / 1000000.0));
+    printf(str_RpmtestRpm, minRpm, percent);
+    
+    nominalDifference(maxRpm);
+    printf(str_RpmtestMaximum);
+    printf(str_RpmtestRpm, maxRpm, percent);
+    
+    const double averageRpm = accumulated / loops;
+    nominalDifference(averageRpm);
+    printf(str_RpmtestAverage);
+    printf(str_RpmtestRpm, averageRpm, percent);
+  }
+  
+  printf("\n");
 }
 
 // launched from the main menu
@@ -931,21 +1067,22 @@ void commandAnalyze()
   printf(str_EscGoBack);
   
   // start and end cylinder
-  uint16_t startCylinder = 0;
+  uint16_t startCylinder = seagate ? 1 : 0; // Seagate: cyl 0 controller reserved
   if (hdd.getParams()->Cylinders > 1)
   {
     while(true)
     {
-      printf(str_ChooseStartCyl, 0, hdd.getParams()->Cylinders-1);
+      printf(str_ChooseStartCyl, startCylinder, hdd.getParams()->Cylinders-1);
       const char* promptStr = prompt(4, str_DecimalInputEsc, true);
       if (!promptStr)
       {
         printf("\n");
         return;
       }
-      startCylinder = (uint16_t)atoi(promptStr);
-      if (startCylinder < hdd.getParams()->Cylinders)
+      const uint16_t startCyl = (uint16_t)atoi(promptStr);
+      if ((startCyl >= startCylinder) && (startCyl < hdd.getParams()->Cylinders))
       {  
+        startCylinder = startCyl;
         if (!startCylinder && !strlen(getPromptBuffer())) printf("0");
         printf("\n");
         break;
@@ -985,7 +1122,8 @@ void commandAnalyze()
   // warnings
   bool headMismatch = false;
   bool cylinderMismatch = false;  
-  bool variableSectorSize = false;  
+  bool variableSectorSize = false;
+  bool useSpareSector = false;
   
   for (uint16_t cylinder = startCylinder; cylinder <= endCylinder; cylinder++)
   {
@@ -997,6 +1135,7 @@ void commandAnalyze()
       bool thisVariableSectorSize = false; // flag to show "variable bytes" in the following status message
       bool thisHeadMismatch = false;       // shown with "@" at the end of line
       bool thisCylinderMismatch = false;   // "*"
+      bool thisUseSpareSector = false;     // "#", Seagate: one bad sector present - use spare eighteenth sector on track instead
       
        // actual details are unused here, only for display
       uint8_t sectorsPerTrack;
@@ -1021,6 +1160,10 @@ void commandAnalyze()
       {
         wd->getCustomAnalyzeTrackResults(thisCylinderMismatch, thisHeadMismatch, thisVariableSectorSize, dummy, dummy2);
       }
+      else if (seagate)
+      {
+        seagate->getCustomAnalyzeTrackResults(thisCylinderMismatch, thisHeadMismatch, thisUseSpareSector, dummy, dummy2);
+      }
       else if (xebecAdaptec)
       {
         xebecAdaptec->getCustomAnalyzeTrackResults(thisCylinderMismatch, thisHeadMismatch, dummy, dummy2);
@@ -1044,13 +1187,14 @@ void commandAnalyze()
       variableSectorSize |= thisVariableSectorSize; 
       headMismatch |= thisHeadMismatch;
       cylinderMismatch |= thisCylinderMismatch;
+      useSpareSector |= thisUseSpareSector;
     }    
   }
 
   printf(diskNotEmpty ? "\n\n" : "\n");
   
   // print out analysis warnings
-  if (cylinderMismatch || headMismatch || variableSectorSize)
+  if (cylinderMismatch || headMismatch || variableSectorSize || useSpareSector)
   {
     printf(str_AnalyzeWarning);
     
@@ -1065,6 +1209,10 @@ void commandAnalyze()
     if (variableSectorSize)
     {
       printf(str_AnalyzeVarSsize);
+    }
+    if (useSpareSector)
+    {
+      printf(str_AnalyzeSpareSector);
     }
     
     printf("\n");
@@ -1096,7 +1244,7 @@ void commandHexdump()
   printf("\n");
   
   // CHS
-  uint16_t cylinder = 0;
+  uint16_t cylinder = seagate ? 1 : 0; // Seagate: cyl 0 controller reserved
   uint8_t head = 0;
   uint8_t sector = 0;
   
@@ -1104,16 +1252,17 @@ void commandHexdump()
   {
     while(true)
     {
-      printf(str_ChooseCylinder, 0, hdd.getParams()->Cylinders-1);
+      printf(str_ChooseCylinder, cylinder, hdd.getParams()->Cylinders-1);
       const char* promptStr = prompt(4, str_DecimalInputEsc, true);
       if (!promptStr)
       {
         printf("\n");
         return;
       }
-      cylinder = (uint16_t)atoi(promptStr);
-      if (cylinder < hdd.getParams()->Cylinders)
+      const uint16_t cyl = (uint16_t)atoi(promptStr);
+      if ((cyl >= cylinder) && (cyl < hdd.getParams()->Cylinders))
       {  
+        cylinder = cyl;
         if (!cylinder && !strlen(getPromptBuffer())) printf("0");
         printf("\n");
         break;
@@ -1254,7 +1403,7 @@ void commandRead(bool verifyOnly)
   printf(str_EscGoBack);
   
   // start and end cylinder (SM1040: always whole disk)
-  uint16_t startCylinder = 0;
+  uint16_t startCylinder = seagate ? 1 : 0; // Seagate: cyl 0 controller reserved
   uint16_t endCylinder = hdd.getParams()->Cylinders-1;
   char key;
   
@@ -1276,16 +1425,17 @@ void commandRead(bool verifyOnly)
       {
         while(true)
         {
-          printf(str_ChooseStartCyl, 0, hdd.getParams()->Cylinders-1);
+          printf(str_ChooseStartCyl, startCylinder, hdd.getParams()->Cylinders-1);
           const char* promptStr = prompt(4, str_DecimalInputEsc, true);
           if (!promptStr)
           {
             printf("\n");
             return;
           }
-          startCylinder = (uint16_t)atoi(promptStr);
-          if (startCylinder < hdd.getParams()->Cylinders)
+          const uint16_t startCyl = (uint16_t)atoi(promptStr);
+          if ((startCyl >= startCylinder) && (startCyl < hdd.getParams()->Cylinders))
           {  
+            startCylinder = startCyl;
             if (!startCylinder && !strlen(getPromptBuffer())) printf("0");
             printf("\n");
             break;
@@ -1323,7 +1473,14 @@ void commandRead(bool verifyOnly)
   
   // analyze first track of chosen bounds
   printf(str_ReadAnalyze);
-  printf((startCylinder == 0) ? str_ReadAnalyzeTrack0 : str_ReadAnalyzeFirstTrack);
+  if ((startCylinder == 0) || (seagate && (startCylinder == 1)))
+  {
+    printf(str_ReadAnalyzeTrack0);
+  }
+  else
+  {
+    printf(str_ReadAnalyzeFirstTrack);
+  }
   hdd.seekDrive(startCylinder, 0);
   hdd.microStep(true);
   
@@ -1456,6 +1613,19 @@ _afterSeek:
               hdd.seekDrive(relocationCyl, relocationHd);
               goto _afterSeek;
             }
+          }          
+          // Seagate: dtto 
+          if (seagate && seagate->isTrackRelocated())
+          {
+            uint16_t relocationCyl;
+            uint8_t relocationHd;
+            seagate->getRelocation(relocationCyl, relocationHd);
+            
+            if ((relocationCyl < hdd.getParams()->Cylinders) && (relocationHd < hdd.getParams()->Heads))
+            {
+              hdd.seekDrive(relocationCyl, relocationHd);
+              goto _afterSeek;
+            }
           }
           
           trackError = true;
@@ -1505,12 +1675,18 @@ _afterSeek:
       }
       
       // check if ID field cylinder or head number differs from the physical cyl/head
+      // Seagate: check if spare sector is in use
       bool dummy;
+      bool useSpareSector = false;
       uint16_t logicalCylinder = hdd.getPhysicalCylinder();
       uint8_t logicalHead = hdd.getPhysicalHead();
       if (wd)
       {
         wd->getCustomAnalyzeTrackResults(dummy, dummy, dummy, logicalCylinder, logicalHead);
+      }
+      else if (seagate)
+      {
+        seagate->getCustomAnalyzeTrackResults(dummy, dummy, useSpareSector, logicalCylinder, logicalHead);
       }
       else if (xebecAdaptec)
       {
@@ -1546,7 +1722,7 @@ _afterSeek:
       for (const uint8_t& sector : sectors)
       {
         llf->readSector(sector, &logicalCylinder, &logicalHead);
-        const uint8_t result = hdd.getLastResult();
+        uint8_t result = hdd.getLastResult();
 
         if (result != HDD_STATUS_OK)
         {
@@ -1573,6 +1749,14 @@ _afterSeek:
         if (!verifyOnly)
         {
           uint8_t* target = &trackBuffer[(sector-startSector)*sectorSizeBytes];
+          
+          // Seagate: check sector not found error and if spare sector is in use; if yes, use that as track buffer contents
+          if (seagate && (result == HDD_STATUS_NO_SECTOR_ID) && useSpareSector)
+          {
+            // manually read spare sector ID 0xFE and update last result
+            llf->readSector(0xFE, &logicalCylinder, &logicalHead);
+            result = hdd.getLastResult();            
+          }
           
           // copy sector buffer to track buffer on success, CRC error or corrected data, otherwise keep zeros in track buffer
           if ((result != HDD_STATUS_NO_SECTOR_ID) && (result != HDD_STATUS_NO_DATA_ID))
@@ -1662,7 +1846,7 @@ void commandWrite(bool formatOnly)
   printf(str_EscGoBack);
   
   // start and end cylinder (SM1040: always whole disk)
-  uint16_t startCylinder = 0;
+  uint16_t startCylinder = seagate ? 1 : 0; // Seagate: cyl 0 controller reserved
   uint16_t endCylinder = hdd.getParams()->Cylinders-1;
   char key;  
   if (!sm1040)
@@ -1683,16 +1867,17 @@ void commandWrite(bool formatOnly)
       {
         while(true)
         {
-          printf(str_ChooseStartCyl, 0, hdd.getParams()->Cylinders-1);
+          printf(str_ChooseStartCyl, startCylinder, hdd.getParams()->Cylinders-1);
           const char* promptStr = prompt(4, str_DecimalInputEsc, true);
           if (!promptStr)
           {
             printf("\n");
             return;
           }
-          startCylinder = (uint16_t)atoi(promptStr);
-          if (startCylinder < hdd.getParams()->Cylinders)
+          const uint16_t startCyl = (uint16_t)atoi(promptStr);
+          if ((startCyl >= startCylinder) && (startCyl < hdd.getParams()->Cylinders))
           {  
+            startCylinder = startCyl;
             if (!startCylinder && !strlen(getPromptBuffer())) printf("0");
             printf("\n");
             break;
@@ -1727,7 +1912,6 @@ void commandWrite(bool formatOnly)
       }
     }
   }  
-  
   
   // enter format parameters
   printf(str_WriteParameters);
@@ -1769,55 +1953,63 @@ void commandWrite(bool formatOnly)
   
   // ask for sectors per track
   uint8_t sectorsPerTrack = 0;
-  uint8_t sectorsPerTrackDefault = 0;
-  uint8_t sectorsPerTrackMax = endec.getMaximumSectorCountFor(llf, sectorSizeBytes);
-  if (hdd.isSeparatorRLL() && (sectorSizeBytes == 512))
+  if (seagate) // non-negotiable
   {
-    sectorsPerTrackDefault = 26;
+    sectorsPerTrack = hdd.isSeparatorRLL() ? 26 : 17;
+    printf(str_SectorsPerTrack, sectorsPerTrack);
   }
-  else if (!hdd.isSeparatorRLL())
+  else
   {
-    if (sectorSizeBytes == 512)
+    uint8_t sectorsPerTrackDefault = 0;
+    uint8_t sectorsPerTrackMax = endec.getMaximumSectorCountFor(llf, sectorSizeBytes);
+    if (hdd.isSeparatorRLL() && (sectorSizeBytes == 512))
     {
-      sectorsPerTrackDefault = 17;
+      sectorsPerTrackDefault = 26;
     }
-    else if (sectorSizeBytes == 256)
+    else if (!hdd.isSeparatorRLL())
     {
-      sectorsPerTrackDefault = 32;
+      if (sectorSizeBytes == 512)
+      {
+        sectorsPerTrackDefault = 17;
+      }
+      else if (sectorSizeBytes == 256)
+      {
+        sectorsPerTrackDefault = 32;
+      }
+      else if (sectorSizeBytes == 1024)
+      {
+        sectorsPerTrackDefault = 8;
+      }
     }
-    else if (sectorSizeBytes == 1024)
+    while(true)
     {
-      sectorsPerTrackDefault = 8;
+      if (sectorsPerTrackDefault)
+      {
+        printf(str_ChooseSptDef, 1, sectorsPerTrackMax, sectorsPerTrackDefault);
+      }
+      else
+      {
+        printf(str_ChooseSpt, 1, sectorsPerTrackMax);
+      }
+      const char* promptStr = prompt(2, str_DecimalInputEsc, true);
+      if (!promptStr)
+      {
+        printf("\n");
+        return;
+      }
+      sectorsPerTrack = (uint8_t)atoi(promptStr);
+      if (sectorsPerTrack && (sectorsPerTrack <= sectorsPerTrackMax))
+      {  
+        printf("\n");
+        break;
+      }    
+      printf(str_DeleteLine);
     }
-  }
-  while(true)
-  {
-    if (sectorsPerTrackDefault)
-    {
-      printf(str_ChooseSptDef, 1, sectorsPerTrackMax, sectorsPerTrackDefault);
-    }
-    else
-    {
-      printf(str_ChooseSpt, 1, sectorsPerTrackMax);
-    }
-    const char* promptStr = prompt(2, str_DecimalInputEsc, true);
-    if (!promptStr)
-    {
-      printf("\n");
-      return;
-    }
-    sectorsPerTrack = (uint8_t)atoi(promptStr);
-    if (sectorsPerTrack && (sectorsPerTrack <= sectorsPerTrackMax))
-    {  
-      printf("\n");
-      break;
-    }    
-    printf(str_DeleteLine);
   }
   
   // starting sector
   uint8_t startSector = 0;
-  uint8_t startSectorMax = sm1040 ? 64-sectorsPerTrack : 256-sectorsPerTrack; // 6 bits or 8 bits used for sector number
+  uint8_t startSectorMax = sm1040 || seagate ? 64-sectorsPerTrack : 256-sectorsPerTrack; // 6 bits or 8 bits used for sector number
   while(true)
   {
     if (wd) // show default for XT and AT
@@ -1845,7 +2037,6 @@ void commandWrite(bool formatOnly)
     printf(str_DeleteLine);
   }
  
-  
   // format interleave
   uint8_t interleave = 1;
   if (sectorsPerTrack > 2)
@@ -1926,6 +2117,31 @@ void commandWrite(bool formatOnly)
   }  
   printf("\n");
   
+  // Seagate: if formatting or writing whole disk, also reformat controller-reserved cylinder 0
+  if (seagate && (startCylinder == 1) && (endCylinder == hdd.getParams()->Cylinders-1))
+  {
+    printf(str_WriteSeagateCylinder);
+    
+    for (uint8_t head = 0; head < hdd.getParams()->Heads; head++)
+    {
+      hdd.seekDrive(0, head);
+      if (!seagate->formatWriteReservedCylinder(head, interleave))
+      {
+        // can only fail on timeout, not ready or write fault
+        printf(str_CHInfo, hdd.getPhysicalCylinder(), hdd.getPhysicalHead());
+        printf(hdd.getLastResultMessage());
+        printf("\n");
+        if (!formatOnly)
+        {
+          sdCloseFile();  
+        }        
+        return;
+      }
+    }
+    
+    printf("\n");
+  }
+  
   // prepare interleave table and track buffer
   std::vector<uint8_t> interleaveTable;
   LLF::getInterleaveTable(sectorsPerTrack, startSector, interleave, interleaveTable);
@@ -1997,6 +2213,9 @@ void commandWrite(bool formatOnly)
       
       if (withVerify)
       {
+        // extra recuperation time for RGATE right after WGATE has been deasserted
+        sleep_us(50);
+        
         // read track with original interleave
         for (const uint8_t& sector : interleaveTable)
         {

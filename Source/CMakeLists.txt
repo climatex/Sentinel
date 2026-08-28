@@ -34,7 +34,7 @@ pico_sdk_init()
 add_executable(Sentinel # entry point and generic routines
                         src/main.cpp src/console.cpp src/hdd.cpp src/endec.cpp src/crc.cpp src/sd.cpp src/dos.cpp src/commands.cpp
                         # low level formats
-                        src/llf/wd.cpp src/llf/omti.cpp src/llf/xebec_adaptec.cpp src/llf/hdc9224.cpp src/llf/sm1040.cpp
+                        src/llf/wd.cpp src/llf/seagate.cpp src/llf/omti.cpp src/llf/xebec_adaptec.cpp src/llf/hdc9224.cpp src/llf/sm1040.cpp
                         )
 
 pico_set_program_name(Sentinel "Sentinel")

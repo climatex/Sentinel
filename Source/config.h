@@ -43,6 +43,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <malloc.h>
+#include <float.h>
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -70,6 +71,7 @@
 
 // individual formats
 #include "wd.h"
+#include "seagate.h"
 #include "omti.h"
 #include "hdc9224.h"
 #include "xebec_adaptec.h"

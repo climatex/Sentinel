@@ -47,10 +47,11 @@ STRINGTABLE str_ProcessingCyl[]           = "\rProcessing cylinder %u...";
 STRINGTABLE str_UnreadableTracks[]        = "Unreadable tracks: %lu\n";
 STRINGTABLE str_SectorErrors[]            = "Sector errors: %lu\n";
 STRINGTABLE str_SectorSizeBytes[]         = "Sector size: %u bytes\n";
+STRINGTABLE str_SectorsPerTrack[]         = "Sectors per track: %u\n";
 
 // startup
 STRINGTABLE str_Splash[]                  = "Sentinel (c) 2026 J. Bogin, https://boginjr.com\n\n"
-                                            "Build date:     23 Aug 2026\n";
+                                            "Build date:     28 Aug 2026\n";
 STRINGTABLE str_SystemInfo[]              = "System clock:   %u MHz (Vreg %.1f V; %d \u00B0C)\n";
 STRINGTABLE str_MemoryUsage[]             = "Memory usage:   initial %uKB of 512KB RAM\n"
                                             "                %uKB of 4MB flash\n";
@@ -91,11 +92,12 @@ STRINGTABLE str_DiskCfgCorrectCRC[]       = "\nCorrect CRC errors:    ";
 // main menu
 STRINGTABLE str_MainMenu[]                = "Select low-level format:               Special options:\n\n"
                                             "1) Western Digital, MFM/RLL, generic   A) Autodetect format\n"
-                                            "2) SMS OMTI, MFM, PC/AT                B) Raw disk operations\n"
-                                            "3) Xebec/Adaptec, MFM, PC/XT           C) Erase disk\n"
-                                            "4) SMC HDC9224, MFM, PC/XT             D) Heads seek test / exercise\n"
-                                            "5) VUVT SMEP SM 1040, MFM              ";
-STRINGTABLE str_MainMenuOptionPark[]      = "E) Park drive heads";
+                                            "2) Seagate ST21/ST22, MFM, PC/AT       B) Raw disk operations\n"
+                                            "3) SMS OMTI, MFM, PC/AT                C) Erase disk\n"
+                                            "4) Xebec/Adaptec, MFM, PC/XT           D) Heads seek test / exercise\n"
+                                            "5) SMC HDC9224, MFM, PC/XT             E) RPM test\n"
+                                            "6) VUVT SMEP SM 1040, MFM              ";
+STRINGTABLE str_MainMenuOptionPark[]      = "F) Park drive heads";
 
 // format-specific options
 STRINGTABLE str_FormatSpecificOptions[]   = "\nEnter format specifics for the %s format.\n"
@@ -113,6 +115,11 @@ STRINGTABLE str_OptXAChooseDataPrefix[]   = "\nIBM/Xebec XT controllers start se
                                             "the Adaptec (such as ACB-2010) with byte 00.\n"
                                             "Usually, Xebecs can work with both and Adaptecs require the zero.\n\n"
                                             "Data fields to write/format: (X)ebec C9 / (A)daptec-compatible 00: ";
+// Seagate
+STRINGTABLE str_OptSgInvalidCylCount[]    = "\nInvalid disk drive cylinder count; must be greater than one\n";
+STRINGTABLE str_OptSgReservedCylNote[]    = "\nNOTE: Cylinder 0 is controller-reserved; disk data starts from cylinder 1.\n"
+                                            "To access cylinder 0, use the 'Raw disk operations' main menu option.\n"
+                                            "This cylinder will also be updated if a whole disk format/write is chosen.\n";
 // nonstandard tracks note
 STRINGTABLE str_SpecialTracksNote[]       = "\nNOTE: with this format you may observe tracks where every sector fails CRC\n"
                                             "or where the Analyze command returns fields that do not match seek position.\n"
@@ -174,6 +181,7 @@ STRINGTABLE str_AnalyzeConstSsize[]       = "Sector sizes inside single tracks a
 STRINGTABLE str_AnalyzeWarning[]          = "Warning(s):\n";
 STRINGTABLE str_AnalyzeCylMismatch[]      = "*: ID field cylinder differs from the physical cylinder\n";
 STRINGTABLE str_AnalyzeHdMismatch[]       = "@: ID field head differs from the physical head\n";
+STRINGTABLE str_AnalyzeSpareSector[]      = "#: Bad sector present on track (255), using spare sector\n";
 STRINGTABLE str_AnalyzeVarSsize[]         = "Variable sector size detected inside tracks!\n";
 
 // hexdump command
@@ -200,6 +208,7 @@ STRINGTABLE str_WriteVerify[]             = "Verify during %s? Y/N: ";
 STRINGTABLE str_WriteSMDriveType[]        = "\nOne logical drive will be created.\nSelect type: RK0(6) / RK0(7): ";
 STRINGTABLE str_WriteDetails[]            = "\nWill format %u cylinders and write %lu bytes from file to disk.\n";
 STRINGTABLE str_WriteDetailsFormat[]      = "\nWill format %u cylinders.\n";
+STRINGTABLE str_WriteSeagateCylinder[]    = "Updating Seagate controller-reserved cylinder 0...";
 
 // microstepping command
 STRINGTABLE str_MicrostepDescription[]    = "\nReuses disk control cable pin 2 (/HDSEL3) to enable /RECOVERYMODE.\n"
@@ -262,6 +271,13 @@ STRINGTABLE str_SeektestProgress[]        = "\nNow testing in between cylinders 
 STRINGTABLE str_SeektestBackForth[]       = "Back and forth seeks";
 STRINGTABLE str_SeektestButterfly[]       = "Full butterfly tests";
 STRINGTABLE str_SeektestRandom[]          = "Random seeks";
+STRINGTABLE str_SeektestRandomAvgAccess[] = "\nAverage access time during %u random seeks: %.1f ms\n";
+
+// RPM test command
+STRINGTABLE str_RpmtestRpm[]              = "%.1f RPM (%s%% nominal)";
+STRINGTABLE str_RpmtestMinimum[]          = "\n\nObserved in %lu second(s):\nminimum: ";
+STRINGTABLE str_RpmtestMaximum[]          = ",\nmaximum: ";
+STRINGTABLE str_RpmtestAverage[]          = ",\naverage: ";
 
 // park command
 STRINGTABLE str_ParkSuccess[]             = "\rDrive heads sent to landing zone cylinder %u.\n";

@@ -4,7 +4,7 @@
 #include "config.h"
 
 // defined in main.cpp
-extern volatile int g_IndexCount;
+extern volatile uint64_t g_IndexCount;
 
 HDC9224::HDC9224()
 {
@@ -136,8 +136,8 @@ bool HDC9224::scanID(uint16_t* cylinder, uint8_t* head, uint8_t* sector, uint16_
     return false;
   }
   
-  g_IndexCount = 0;  
-  while (g_IndexCount < 2)
+  const uint64_t startCount = g_IndexCount;
+  while ((g_IndexCount - startCount) < 2)
   {
     CRC16 crc(CRC::Type::CCITT);
     

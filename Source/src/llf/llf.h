@@ -11,6 +11,7 @@ public:
   enum FormatType
   {
     WD,
+    Seagate,
     OMTI,
     XebecAdaptec,
     HDC9224,

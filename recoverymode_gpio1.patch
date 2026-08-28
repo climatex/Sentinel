@@ -1,12 +1,11 @@
 diff --git a/Source/src/commands.cpp b/Source/src/commands.cpp
-index bfc5816..b78a2f0 100644
+index ea9a9a7..7ee4c73 100644
 --- a/Source/src/commands.cpp
 +++ b/Source/src/commands.cpp
-@@ -2065,21 +2065,9 @@ void commandWrite(bool formatOnly)
- 
+@@ -2269,20 +2269,8 @@ void commandWrite(bool formatOnly)
  void commandMicrostep()
  {
--  printf(str_MicrostepDescription);
+   printf(str_MicrostepDescription);
 -  
 -  // too bad, we're out of pins here that can sink 48 mA :)
 -  if (hdd.getParams()->UseReduceWriteCurrent)
@@ -20,9 +19,8 @@ index bfc5816..b78a2f0 100644
 -    return;
 -  }
 -  
-+  printf(str_MicrostepDescription);  
    printf(str_EscGoBack);
-+  
++
    uint8_t microsteps = 0;
    const uint8_t microstepsMax = 8; // an ST225 has eight algorithms maximum
    while(true)
@@ -101,10 +99,10 @@ index 5cc8ce0..cfffd9b 100644
  };
 \ No newline at end of file
 diff --git a/Source/src/main.cpp b/Source/src/main.cpp
-index a955997..ac938b0 100644
+index a6b2a57..39c9559 100644
 --- a/Source/src/main.cpp
 +++ b/Source/src/main.cpp
-@@ -174,20 +174,21 @@ int main()
+@@ -175,20 +175,21 @@ int main()
    
    srand(get_rand_32());
     
@@ -132,11 +130,11 @@ index a955997..ac938b0 100644
    // set initial states of the output shift register 74HC595
    // (Q0: HDSEL0, Q1: HDSEL1, Q2: HDSEL2, Q3: HDSEL3, Q4: STEP, Q5: DIR, Q6: DS, Q7: RLL/MFM)
 diff --git a/Source/src/stringtable.h b/Source/src/stringtable.h
-index a86d0bd..7df9eed 100644
+index 1046035..9e7ca8a 100644
 --- a/Source/src/stringtable.h
 +++ b/Source/src/stringtable.h
-@@ -200,15 +200,13 @@ STRINGTABLE str_WriteDetails[]            = "\nWill format %u cylinders and writ
- STRINGTABLE str_WriteDetailsFormat[]      = "\nWill format %u cylinders.\n";
+@@ -211,15 +211,13 @@ STRINGTABLE str_WriteDetailsFormat[]      = "\nWill format %u cylinders.\n";
+ STRINGTABLE str_WriteSeagateCylinder[]    = "Updating Seagate controller-reserved cylinder 0...";
  
  // microstepping command
 -STRINGTABLE str_MicrostepDescription[]    = "\nReuses disk control cable pin 2 (/HDSEL3) to enable /RECOVERYMODE.\n"

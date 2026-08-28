@@ -4,7 +4,7 @@
 #include "config.h"
 
 // defined in main.cpp
-extern volatile int g_IndexCount;
+extern volatile uint64_t g_IndexCount;
 extern const uint g_PioSamplerOffset;
 extern const uint g_PioWriterOffset;
 extern const int g_PioWriterDma;
@@ -217,7 +217,7 @@ uint8_t ENDEC::findSync(uint16_t pattern, uint16_t& partial, uint8_t& bitShift)
   }
   
   // keep PLL locked during the rest of the rotation
-  const int indexCount = g_IndexCount;
+  const uint64_t indexCount = g_IndexCount;
   while (g_IndexCount == indexCount)
   {
     // avoid waiting for next INDEX if the disk has problems

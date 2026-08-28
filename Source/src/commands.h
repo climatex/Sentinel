@@ -11,4 +11,5 @@ void commandAutodetect();
 void commandRawdisk();
 void commandErase();
 void commandSeekTest();
+void commandRpmTest();
 void commandPark();

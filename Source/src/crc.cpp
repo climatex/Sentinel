@@ -41,6 +41,10 @@ CRC32::CRC32(CRC::Type type)
     m_initial = 0xFFFFFFFFUL;
     m_polynomial = 0x140A0445UL;
     break;
+  case Seagate:
+    m_initial = 0;
+    m_polynomial = 0x41044185UL;
+    break;
   case OMTI_ID:
     m_initial = 0x2605FB9CUL;
     m_polynomial = 0x0104C981UL;

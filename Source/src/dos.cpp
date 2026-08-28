@@ -26,6 +26,10 @@ uint8_t sectorsPerTrack = 0;  // uniform for all
 uint16_t sectorSizeBytes = 0; // ditto + shall be max. 512 bytes
 char* fsErrorMessage = 0;     // Progmem index
 
+// controller specific
+uint16_t lastCyl = (uint16_t)-1;
+uint8_t lastHd   = (uint8_t)-1;
+
 extern "C"
 {
   
@@ -127,6 +131,48 @@ void dosConvertLogicalSectorToCHS(const uint32_t& logical, uint16_t& cylinder, u
   cylinder = (log / sectorsPerTrack) / hdd.getParams()->Heads;
   head = (log / sectorsPerTrack) % hdd.getParams()->Heads;
   sector = (log % sectorsPerTrack) + startSector;
+  
+  // Seagate controller specifics
+  if (fmt->getType() == LLF::FormatType::Seagate)
+  {
+    Seagate* seagate = (Seagate*)fmt;
+    cylinder++; // data starts from cylinder 1
+     
+    if ((lastCyl != cylinder) || (lastHd != head))
+    {
+      // check if this track had been relocated or if a spare sector is in use
+      hdd.seekDrive(cylinder, head);
+      lastCyl = cylinder;
+      lastHd = head;
+      
+      uint8_t dummy, dummy2, dummy4;
+      uint16_t dummy3;
+      if (seagate->analyzeTrack(MAX_SPT_LIMIT, false, dummy, dummy2, dummy3, dummy4))
+      {
+        if (seagate->isTrackRelocated())
+        {
+          seagate->getRelocation(cylinder, head); // set new cylinder and head, keep sector number
+        }
+        else
+        {
+          bool dummy;
+          bool useSpareSector;        
+          seagate->getCustomAnalyzeTrackResults(dummy, dummy, useSpareSector, dummy3, dummy2); 
+
+          // if a spare sector is in use and the current one cannot be found in the sectors table
+          if (useSpareSector)        
+          {
+            std::vector<uint8_t> sectors;
+            seagate->getAnalyzeSectorsTable(sectors);          
+            if (std::find(sectors.begin(), sectors.end(), sector) == sectors.end())
+            {
+              sector = 0xFE; // explicitly set to read the spare sector
+            }
+          }
+        }
+      }
+    }    
+  }
 }
 
 FRESULT dosResult(FRESULT result)
@@ -190,12 +236,16 @@ FRESULT dosResult(FRESULT result)
 
 bool dosInitialize()
 {
+  // controller specific
+  lastCyl = (uint16_t)-1;
+  lastHd  = (uint8_t)-1;
+  
   // switch FATFS diskio to use our functions
   diskio_use_sd = false;
   
-  // look at track 0
+  // look at first track
   uint8_t interleave;
-  hdd.seekDrive(0, 0);
+  hdd.seekDrive((fmt->getType() == LLF::FormatType::Seagate) ? 1 : 0, 0);
   if (!fmt->analyzeTrack(MAX_SPT_LIMIT, false, sectorsPerTrack, startSector, sectorSizeBytes, interleave))
   {
     if (hdd.getLastResult() == HDD_STATUS_NO_SECTOR_ID)

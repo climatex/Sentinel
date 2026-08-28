@@ -12,6 +12,7 @@ public:
   {
     CCITT = 0,
     WD,
+    Seagate,
     OMTI_ID,
     OMTI_DATA,
     XebecAdaptec,

@@ -6,7 +6,7 @@
 #include "config.h"
 
 // defined in main.cpp
-extern volatile int g_IndexCount;
+extern volatile uint64_t g_IndexCount;
 
 SM1040::SM1040()
 {
@@ -170,8 +170,8 @@ bool SM1040::scanID(uint16_t* cylinder, uint8_t* head, uint8_t* sector, uint16_t
     return false;
   }
   
-  g_IndexCount = 0;  
-  while (g_IndexCount < 2)
+  const uint64_t startCount = g_IndexCount;
+  while ((g_IndexCount - startCount) < 2)
   {
     CRC32 crc(CRC::Type::SM1040_ID);
     

@@ -6,7 +6,7 @@
 #include "config.h"
 
 // defined in main.cpp
-extern volatile int g_IndexCount;
+extern volatile uint64_t g_IndexCount;
 
 WD::WD()
 {
@@ -270,8 +270,8 @@ bool WD::scanID(uint16_t* cylinder, uint8_t* sdh, uint8_t* sector, uint16_t* res
     return false;
   }
   
-  g_IndexCount = 0;
-  while (g_IndexCount < 2)
+  const uint64_t startCount = g_IndexCount;
+  while ((g_IndexCount - startCount) < 2)
   {
     CRC16 crc(CRC::Type::CCITT);
     
