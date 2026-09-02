@@ -371,6 +371,33 @@ int main()
     else if (key == '5')
     {
       format = new HDC9224;
+      
+      // HDC9224 format specifics
+      printf(str_FormatSpecificOptions, "HDC9224");
+      printf(str_EscGoBack);
+      printf(str_OptHDCExampleLongshine);
+      
+      // ID field length
+      printf(str_OptHDCIdFieldLen);
+      key = toupper(readKey("78\e"));
+      if (key == '\e') { printf("\n"); continue; }
+      printf(str_EchoKey, key);
+      ((HDC9224*)format)->setIdField8Bytes(key == '8');
+      
+      // CRC preset
+      printf(str_OptHDCInitialCRC);
+      key = toupper(readKey("ZO\e"));
+      if (key == '\e') { printf("\n"); continue; }
+      printf(str_EchoKey, key);
+      ((HDC9224*)format)->setCrcInitialZeros(key == 'Z');
+      
+      // data address mark
+      printf(str_OptHDCDataAddrMark);
+      key = toupper(readKey("12\e"));
+      if (key == '\e') { printf("\n"); continue; }
+      printf(str_EchoKey, key);
+      ((HDC9224*)format)->setWriteAddressMarkFB(key == '2');
+      
       formatMenu(format);
     }
     else if (key == '6')

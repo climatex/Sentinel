@@ -154,23 +154,38 @@ void commandAutodetect()
   
   // try the SMC HDC9224 before WD, as these have similar ID fields
   hdc9224 = new HDC9224;
-  if (hdc9224->analyzeTrack(MAX_SPT_LIMIT, false, sectorsPerTrack, startSector, sectorSizeBytes, interleave))
+  for (uint8_t attempt = 0; attempt < 4; attempt++)
   {
-    bool dummy;
-    hdc9224->getCustomAnalyzeTrackResults(dummy, dummy, actualCyl, actualHd);
+    // 4 attempts: detect 7 or 8 byte ID fields and initial value of CRC - can be preset to all ones or all zeros
+    const bool idField8Bytes = attempt % 2;
+    const bool crcInitialZeros = attempt / 2;
+    hdc9224->setIdField8Bytes(idField8Bytes);
+    hdc9224->setCrcInitialZeros(crcInitialZeros);
     
-    // do a test read of one data field on track; if the CRC is okay, it is the SMC
-    if (hdc9224->readSector(startSector, &actualCyl, &actualHd))
+    if (hdc9224->analyzeTrack(MAX_SPT_LIMIT, false, sectorsPerTrack, startSector, sectorSizeBytes, interleave))
     {
-      printf(str_DetectFormat);
-      printf("HDC9224");
-          
-      printf("\n");
-      delete hdc9224;
-      hdc9224 = NULL;
-      return;
+      bool dummy;
+      hdc9224->getCustomAnalyzeTrackResults(dummy, dummy, actualCyl, actualHd);
+      
+      // do a test read of one data field on track; if the CRC is okay, it is the SMC
+      if (hdc9224->readSector(startSector, &actualCyl, &actualHd))
+      {
+        printf(str_DetectFormat);
+        printf("HDC9224");
+        
+        printf(str_DetectIdFieldLen, idField8Bytes ? 8 : 7);
+        printf(str_DetectCrcInitial);
+        printf(crcInitialZeros ? str_DetectCrcInitialZeros : str_DetectCrcInitialOnes);
+        printf(str_DetectDataFieldStart);
+        printf(hdc9224->getWriteAddressMarkFB() ? "FB" : "F8");
+            
+        printf("\n");
+        delete hdc9224;
+        hdc9224 = NULL;
+        return;
+      }
     }
-  }
+  }  
   delete hdc9224;
   hdc9224 = NULL;
   
@@ -290,7 +305,7 @@ void commandAutodetect()
       printf(str_DetectLikely);
     }
     printf("Xebec/Adaptec");
-    printf(str_DetectDataFieldXebec);
+    printf(str_DetectDataFieldStart);
     if (dataFieldsAdaptec == (uint8_t)-1)
     {
       printf(str_DetectUnknown);

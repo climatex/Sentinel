@@ -51,7 +51,7 @@ STRINGTABLE str_SectorsPerTrack[]         = "Sectors per track: %u\n";
 
 // startup
 STRINGTABLE str_Splash[]                  = "Sentinel (c) 2026 J. Bogin, https://boginjr.com\n\n"
-                                            "Build date:     28 Aug 2026\n";
+                                            "Build date:     02 Sep 2026\n";
 STRINGTABLE str_SystemInfo[]              = "System clock:   %u MHz (Vreg %.1f V; %d \u00B0C)\n";
 STRINGTABLE str_MemoryUsage[]             = "Memory usage:   initial %uKB of 512KB RAM\n"
                                             "                %uKB of 4MB flash\n";
@@ -120,6 +120,13 @@ STRINGTABLE str_OptSgInvalidCylCount[]    = "\nInvalid disk drive cylinder count
 STRINGTABLE str_OptSgReservedCylNote[]    = "\nNOTE: Cylinder 0 is controller-reserved; disk data starts from cylinder 1.\n"
                                             "To access cylinder 0, use the 'Raw disk operations' main menu option.\n"
                                             "This cylinder will also be updated if a whole disk format/write is chosen.\n";
+// HDC9224
+STRINGTABLE str_OptHDCExampleLongshine[]  = "\nExample values for a 'Longshine LCS-6210D' employing the HDC9224 chip:\n"
+                                            "ID fields 8 bytes long, CRC preset to all zeros, data fields start byte FB.\n\n";
+STRINGTABLE str_OptHDCIdFieldLen[]        = "ID fields length: (7) / (8) bytes: ";
+STRINGTABLE str_OptHDCInitialCRC[]        = "Initial CRC bits: all (Z)eros / all (O)nes: ";
+STRINGTABLE str_OptHDCDataAddrMark[]      = "Data field address mark to write: (1) 0xF8 / (2) 0xFB: ";
+
 // nonstandard tracks note
 STRINGTABLE str_SpecialTracksNote[]       = "\nNOTE: with this format you may observe tracks where every sector fails CRC\n"
                                             "or where the Analyze command returns fields that do not match seek position.\n"
@@ -157,6 +164,7 @@ STRINGTABLE str_StatusDataCorrected[]     = "Corrected data error";
 
 // SD card
 STRINGTABLE str_SdNotPresent[]            = "No memory card present\n";
+STRINGTABLE str_SdUnsupported[]           = "Memory cards below 2 GB are not supported in this build\n";
 STRINGTABLE str_SdErrorFS[]               = "Memory card or filesystem error\n";
 STRINGTABLE str_SdErrorFull[]             = "Memory card likely full";
 STRINGTABLE str_SdErrorEndOfFile[]        = "Reached end-of-file";
@@ -292,6 +300,10 @@ STRINGTABLE str_DetectUnknown[]           = "unknown";
 STRINGTABLE str_DetectBits[]              = "%u bits";
 STRINGTABLE str_DetectCRC[]               = "\nData field CRC width: ";
 STRINGTABLE str_DetectHeadSelect[]        = "\nHead select width: ";
-STRINGTABLE str_DetectDataFieldXebec[]    = "\nData fields start byte: ";
+STRINGTABLE str_DetectIdFieldLen[]        = "\nID fields length: %u bytes";
+STRINGTABLE str_DetectCrcInitial[]        = "\nInitial CRC bits preset to: ";
+STRINGTABLE str_DetectCrcInitialOnes[]    = "all ones";
+STRINGTABLE str_DetectCrcInitialZeros[]   = "all zeros";
+STRINGTABLE str_DetectDataFieldStart[]    = "\nData fields start byte: ";
 STRINGTABLE str_DetectNoFormat[]          = "\rNo supported format detected.\n"
                                             "Use the Raw disk operations menu to dump the raw bitstream to file.\n";

@@ -19,12 +19,20 @@ public:
   
   HDC9224();
   void getCustomAnalyzeTrackResults(bool& cylNumberMismatch, bool& hdNumberMismatch, uint16_t& actualCylNumber, uint8_t& actualHdNumber);
+  bool getWriteAddressMarkFB() { return m_WriteAddressMarkFB; }
+  void setWriteAddressMarkFB(bool set) { m_WriteAddressMarkFB = set; }
+  void setIdField8Bytes(bool set) { m_IdField8Bytes = set; }
+  void setCrcInitialZeros(bool set) { m_CrcInitialZeros = set; }
   
 private:
   bool m_AnalyzeCylNumberMismatch;
   bool m_AnalyzeHdNumberMismatch;
   uint16_t m_AnalyzeActualCylNumber;
   uint8_t m_AnalyzeActualHdNumber;
+  
+  bool m_IdField8Bytes;
+  bool m_CrcInitialZeros;
+  bool m_WriteAddressMarkFB;
   
   std::vector<uint8_t> m_SectorBuffer;
 };

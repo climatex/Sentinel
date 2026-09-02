@@ -61,7 +61,14 @@ bool sdDetect()
     if ((result == FR_DISK_ERR) || (result == FR_NOT_READY))
     {
       printf("\n");
-      printf(str_SdNotPresent);
+      if ((sdCard.state.card_type == SDCARD_V1) || (sdCard.state.card_type == SDCARD_V2))
+      {
+        printf(str_SdUnsupported);
+      }
+      else
+      {
+        printf(str_SdNotPresent);
+      }      
     }
     else
     {

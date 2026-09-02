@@ -23,7 +23,7 @@ public:
   
   virtual ~CRC() {};
 
-  virtual void setInitial() = 0;  
+  virtual void setInitial(bool overrideInitial = false, uint64_t initial = 0) = 0;  
   virtual void add(uint8_t byte) = 0;
   virtual uint64_t get() = 0;
   virtual bool tryComputeCorrection(uint8_t* buffer, size_t count) = 0;
@@ -34,7 +34,7 @@ class CRC16 : public CRC
 public:
   CRC16(CRC::Type type);
   
-  void setInitial() { m_crc = m_initial; }
+  void setInitial(bool overrideInitial = false, uint64_t initial = 0) { m_crc = overrideInitial ? initial : m_initial; }
   void add(uint8_t byte);
   uint64_t get() { return m_crc; }
   bool tryComputeCorrection(uint8_t* buffer, size_t count) { return false; }
@@ -50,7 +50,7 @@ class CRC32 : public CRC
 public:
   CRC32(CRC::Type type);
   
-  void setInitial() { m_crc = m_initial; }
+  void setInitial(bool overrideInitial = false, uint64_t initial = 0) { m_crc = overrideInitial ? initial : m_initial; }
   void add(uint8_t byte);
   uint64_t get() { return m_crc; }  
   bool tryComputeCorrection(uint8_t* buffer, size_t count);
@@ -66,7 +66,7 @@ class CRC56 : public CRC
 public:
   CRC56(CRC::Type type);
   
-  void setInitial() { m_crc = m_initial; }
+  void setInitial(bool overrideInitial = false, uint64_t initial = 0) { m_crc = overrideInitial ? initial : m_initial; }
   void add(uint8_t byte);
   uint64_t get() { return m_crc; }
   bool tryComputeCorrection(uint8_t* buffer, size_t count);

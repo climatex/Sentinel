@@ -10,6 +10,15 @@ HDC9224::HDC9224()
 {
   // one sector buffer max. 512B + 1 byte data address mark + 4 bytes CRC
   m_SectorBuffer.resize(517, 0);
+  
+  // [A1][FE][CYL_LO][HEAD][SECTOR] + 2 bytes CRC, or [A1][FE][CYL_LO][HEAD][SECTOR][SECTORSIZE] + 2 bytes CRC
+  m_IdField8Bytes = false;
+  
+  // value of "CRC PRESET" bit of "INTERRUPT/COMMAND TERMINATION REGISTER"
+  m_CrcInitialZeros = false;
+  
+  // write/format data field address mark F8 or FB
+  m_WriteAddressMarkFB = false;
        
   // custom analyzeTrack() results
   m_AnalyzeCylNumberMismatch = false;
@@ -21,7 +30,7 @@ HDC9224::HDC9224()
 uint8_t* HDC9224::getSectorBuffer()
 { 
   // single sector buffer of a data field, max 517 bytes
-  return &m_SectorBuffer[1]; // F8 data address mark ignored during data field read
+  return &m_SectorBuffer[1]; // F8/FB data address mark ignored during data field read
 }
 
 bool HDC9224::analyzeTrack(uint8_t idSamples, bool printOut, uint8_t& sectorsPerTrack, uint8_t& startSector, uint16_t& sectorSizeBytes, uint8_t& interleave)
@@ -140,6 +149,10 @@ bool HDC9224::scanID(uint16_t* cylinder, uint8_t* head, uint8_t* sector, uint16_
   while ((g_IndexCount - startCount) < 2)
   {
     CRC16 crc(CRC::Type::CCITT);
+    if (m_CrcInitialZeros)
+    {
+      crc.setInitial(true, 0);
+    }
     
     if (!endec.lockPLL(TIMEOUT_DISK_ROTATION_US))
     {
@@ -168,8 +181,8 @@ bool HDC9224::scanID(uint16_t* cylinder, uint8_t* head, uint8_t* sector, uint16_
     
     crc.add(0xA1); // consumed by findSync() and not part of the read
     
-    size_t count = 6;
-    uint8_t idField[6]; // [FE][CYL_LO][HEAD][SECTOR] + 2 bytes CRC
+    size_t count = m_IdField8Bytes ? 7 : 6; // minus one, A1
+    uint8_t idField[count]; // [FE][CYL_LO][HEAD][SECTOR][if 8 bytes: SECTORSIZE] + 2 bytes CRC
     const bool success = endec.decodeMFM(idField, count, partial, bitShift, &crc);
     endec.setReadGate(false);  // read gate can be deasserted now
    
@@ -215,12 +228,17 @@ bool HDC9224::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrid
   uint16_t cylinder = overrideCyl ? *overrideCyl : hdd.getPhysicalCylinder();
   uint8_t head = overrideHead ? *overrideHead : hdd.getPhysicalHead();
   
-  // A1 consumed by findSync(), ident F8, sector data, 4 byte CRC
+  // A1 consumed by findSync(), ident F8/FB, sector data, 4 byte CRC
   size_t dataFieldCount = 517;
       
   for (uint8_t readAttempt = 0; readAttempt < READ_SECTOR_ATTEMPTS; readAttempt++)
   {
     CRC32 crc(CRC::Type::HDC9224);
+    if (m_CrcInitialZeros)
+    {
+      crc.setInitial(true, 0);
+    }
+    
     bool found = false;
     
     // reseek on last attempt
@@ -286,8 +304,8 @@ bool HDC9224::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrid
     const bool success = endec.decodeMFM(m_SectorBuffer.data(), dataFieldCount, partial, bitShift, &crc);    
     endec.setReadGate(false); // read gate can be deasserted now
     
-    // data address mark must be F8
-    if (!success || (m_SectorBuffer[0] != 0xF8))
+    // data address mark must be F8 or FB
+    if (!success || ((m_SectorBuffer[0] != 0xF8) && (m_SectorBuffer[0] != 0xFB)))
     {
       continue;
     }
@@ -310,6 +328,7 @@ bool HDC9224::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrid
       continue;      
     }
     
+    m_WriteAddressMarkFB = m_SectorBuffer[0] == 0xFB;
     hdd.setLastResult(HDD_STATUS_OK);
     return true;
   }
@@ -337,6 +356,10 @@ bool HDC9224::writeSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overri
   
   // prepare CRC counter
   CRC32 crc(CRC::Type::HDC9224);
+  if (m_CrcInitialZeros)
+  {
+    crc.setInitial(true, 0);
+  }
     
   // append 12 bytes preamble and info where to insert MFM/RLL sync
   data.insert(data.end(), 12, 0); 
@@ -347,8 +370,8 @@ bool HDC9224::writeSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overri
   data.push_back(0xA1); 
 
   // ID part of CRC computation
-  crc.add(0xF8);
-  data.push_back(0xF8);
+  crc.add(m_WriteAddressMarkFB ? 0xFB : 0xF8);
+  data.push_back(m_WriteAddressMarkFB ? 0xFB : 0xF8);
   
   // sector data
   for (size_t i = 0; i < 512; i++)
@@ -470,6 +493,10 @@ bool HDC9224::formatWriteTrack(const std::vector<uint8_t>& interleave, const uin
     offset += 13;
     
     CRC16 idFieldCrc(CRC::Type::CCITT);
+    if (m_CrcInitialZeros)
+    {
+      idFieldCrc.setInitial(true, 0);
+    }
     
     // 0xA1 with dropped Ck2 follows
     idFieldCrc.add(0xA1); // used with CRC computation
@@ -494,6 +521,13 @@ bool HDC9224::formatWriteTrack(const std::vector<uint8_t>& interleave, const uin
     const uint8_t logicalSector = interleave[sec];
     data[offset++] = logicalSector;
     idFieldCrc.add(logicalSector);
+    
+    // SECTORSIZE, if 8 byte ID fields enabled
+    if (m_IdField8Bytes)
+    {
+      data[offset++] = 2; // 512 byte sectors, 32-bit data field CRC in use
+      idFieldCrc.add(2);
+    }
         
     // store ID field CRC
     const uint16_t idCrcVal = idFieldCrc.get();
@@ -505,16 +539,20 @@ bool HDC9224::formatWriteTrack(const std::vector<uint8_t>& interleave, const uin
     memset(data+offset, 0, 15);
     offset += 15;
     
-    CRC32 dataFieldCrc(CRC::Type::HDC9224);  
+    CRC32 dataFieldCrc(CRC::Type::HDC9224);
+    if (m_CrcInitialZeros)
+    {
+      dataFieldCrc.setInitial(true, 0);
+    }
     
     // 0xA1 with dropped clock follows
     dataFieldCrc.add(0xA1); // used with CRC computation    
     clockBits.push_back(offset * 8 + 5);    
     data[offset++] = 0xA1;
     
-    // DATA ident 0xF8
-    data[offset++] = 0xF8;
-    dataFieldCrc.add(0xF8);
+    // DATA ident 0xF8 / 0xFB
+    data[offset++] = m_WriteAddressMarkFB ? 0xFB : 0xF8;
+    dataFieldCrc.add(m_WriteAddressMarkFB ? 0xFB : 0xF8);
     
     // DATA
     const uint16_t pos = (logicalSector-startSector)*512;
