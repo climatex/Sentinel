@@ -48,9 +48,9 @@ public:
   bool recalibrate();
   bool seekDrive(uint16_t, uint8_t);
   
-  uint8_t getMicrostepping() { return m_MicroSteps; }
-  void setMicrostepping(uint8_t steps) { m_MicroSteps = steps; }
-  void testMicrostepping();
+  void getMicrostepping(bool& onNoAddressMark, bool& onCRCError) { onNoAddressMark = m_MicroStepOnNoAddressMark; onCRCError = m_MicroStepOnCRCError; }
+  void setMicrostepping(bool onNoAddressMark, bool onCRCError) { m_MicroStepOnNoAddressMark = onNoAddressMark; m_MicroStepOnCRCError = onCRCError; }
+  bool testMicrostepping();
   void microStep(bool perform);
     
   uint16_t getPhysicalCylinder() { return m_PhysicalCylinder; }
@@ -63,7 +63,7 @@ public:
   void diskConfigurationProvide();
   
 private:
-  void microStepInternal(bool perform);
+  bool microStepInternal(bool perform, bool testing);
   void updateShiftRegister();
   bool diskConfigurationIsPresent();
   bool diskConfigurationLoad();
@@ -77,5 +77,7 @@ private:
   bool m_SeekForward;
   uint16_t m_PhysicalCylinder;
   uint8_t m_PhysicalHead;
-  uint8_t m_MicroSteps;
+  
+  bool m_MicroStepOnNoAddressMark;
+  bool m_MicroStepOnCRCError;
 };

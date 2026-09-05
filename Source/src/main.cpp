@@ -272,13 +272,14 @@ int main()
     hdd.setSeparatorRLL(false); // MFM by default
     printf("\n");
     
-    strcat(menuOptions, "123456ABCDE");
+    strcat(menuOptions, "1234567ABCDE");
     printf(str_MainMenu);
     if (hdd.getParams()->UseLandingZone) // add park option
     {
       printf(str_MainMenuOptionPark);
       strcat(menuOptions, "F");
     }
+    printf(str_MainMenuContd);
     printf("\n\n");
     printf(str_ChooseOption);
     key = toupper(readKey(menuOptions));
@@ -403,6 +404,11 @@ int main()
     else if (key == '6')
     {
       format = new SM1040;
+      formatMenu(format);
+    }
+    else if (key == '7')
+    {
+      format = new ADT;
       formatMenu(format);
     }
     else if (key == 'A')

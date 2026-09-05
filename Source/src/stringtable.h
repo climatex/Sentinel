@@ -16,6 +16,7 @@ STRINGTABLE str_Disabled[]                = "disabled";
 STRINGTABLE str_Yes[]                     = "yes";
 STRINGTABLE str_No[]                      = "no";
 STRINGTABLE str_OK[]                      = "OK";
+STRINGTABLE str_FAIL[]                    = "FAIL";
 STRINGTABLE str_Error[]                   = "error";
 STRINGTABLE str_MFM[]                     = "MFM";
 STRINGTABLE str_RLL[]                     = "RLL";
@@ -35,6 +36,7 @@ STRINGTABLE str_ChooseEndCyl[]            = "Ending cylinder (%u-%u): ";
 STRINGTABLE str_ChooseSecSize[]           = "Sector size (1)28B (2)56B (5)12B 1(K)B: ";
 STRINGTABLE str_ChooseExpectedSpt[]       = "Expected sectors per track (%u-%u): ";
 STRINGTABLE str_ChooseExpectedSptDef[]    = "Expected sectors per track (%u-%u, default: %u): ";
+STRINGTABLE str_ChooseExpectedStartSec[]  = "Expected starting sector (0-%u, likely: %u): ";
 STRINGTABLE str_ChooseSpt[]               = "Sectors per track (%u-%u): ";
 STRINGTABLE str_ChooseSptDef[]            = "Sectors per track (%u-%u, default: %u): ";
 STRINGTABLE str_ChooseStartSector[]       = "Starting sector (%u-%u): ";
@@ -48,10 +50,11 @@ STRINGTABLE str_UnreadableTracks[]        = "Unreadable tracks: %lu\n";
 STRINGTABLE str_SectorErrors[]            = "Sector errors: %lu\n";
 STRINGTABLE str_SectorSizeBytes[]         = "Sector size: %u bytes\n";
 STRINGTABLE str_SectorsPerTrack[]         = "Sectors per track: %u\n";
+STRINGTABLE str_StartSector[]             = "Starting sector: %u\n";
 
 // startup
 STRINGTABLE str_Splash[]                  = "Sentinel (c) 2026 J. Bogin, https://boginjr.com\n\n"
-                                            "Build date:     02 Sep 2026\n";
+                                            "Build date:     05 Sep 2026\n";
 STRINGTABLE str_SystemInfo[]              = "System clock:   %u MHz (Vreg %.1f V; %d \u00B0C)\n";
 STRINGTABLE str_MemoryUsage[]             = "Memory usage:   initial %uKB of 512KB RAM\n"
                                             "                %uKB of 4MB flash\n";
@@ -97,6 +100,7 @@ STRINGTABLE str_MainMenu[]                = "Select low-level format:           
                                             "4) Xebec/Adaptec, MFM, PC/XT           D) Heads seek test / exercise\n"
                                             "5) SMC HDC9224, MFM, PC/XT             E) RPM test\n"
                                             "6) VUVT SMEP SM 1040, MFM              ";
+STRINGTABLE str_MainMenuContd[]           = "\n7) ZPA ADT 4700, MFM";
 STRINGTABLE str_MainMenuOptionPark[]      = "F) Park drive heads";
 
 // format-specific options
@@ -138,7 +142,7 @@ STRINGTABLE str_LlfMenu[]                 = "(A)nalyze disk for sector ID fields
                                             "(H)ex dump of one sector data field\n"
                                             "(V)erify data fields\n"
                                             "(R)ead data fields into binary image\n"
-                                            "(M)icrostepping during reads (recovery mode): %s\n"
+                                            "(M)icrostepping during data field reads: %s\n"
                                             "(F)ormat disk\n"
                                             "(W)rite data fields from binary image, with format\n";                                            
 STRINGTABLE str_LlfMountDOS[]             = "(I)nspect first DOS primary partition\n";
@@ -205,6 +209,9 @@ STRINGTABLE str_ReadAnalyzeFirstTrack[]   = "first track of given range:";
 STRINGTABLE str_ReadExpectedSpt1[]        = "\n\nChoose how many sectors to read each track.\n";
 STRINGTABLE str_ReadExpectedSpt2[]        = "Unreadable sectors and tracks will be zero-padded in the output file.\n";
 STRINGTABLE str_ReadExpectedSpt3[]        = "Enter 0 only for non-uniform disk formats, where this may vary each track.\n";
+STRINGTABLE str_ReadExpectedStartSec[]    = "\nIn case less than %u sector(s) are read from a track, enter the lowest\n"
+                                            "(starting) sector number that shall exist on every track.\n"
+                                            "Press Esc if the starting sector number is allowed to vary each track.\n";
 STRINGTABLE str_ReadSavingNoInterleave[]  = "Saving output file with 1:1 interleave.\n";
 STRINGTABLE str_ReadSM1040LogicalDrive1[] = "SM1040: %s logical drive %u ends at file offset %08lX\n";
 STRINGTABLE str_ReadSM1040LogicalDrive2[] = "SM1040: %s logical drive %u ends at cylinder %u head %u\n";
@@ -223,13 +230,16 @@ STRINGTABLE str_MicrostepDescription[]    = "\nReuses disk control cable pin 2 (
                                             "Use this to mitigate disk data recording that has drifted over time:\n"
                                             "wire /HDSEL3 to the recovery mode signal of the disk connector.\n"
                                             "Most likely, a jumper will need to be set for proper operation.\n";
-STRINGTABLE str_MicrostepCount[]          = "Microsteps to execute before reads (0-%u, 0: disable): ";
+STRINGTABLE str_MicrostepOnNoAddrMark[]   = "Microstepping on sector not found / no data address mark errors? Y/N: ";
+STRINGTABLE str_MicrostepOnCRCErrors[]    = "Microstepping on uncorrectable CRC errors? Y/N: ";
 STRINGTABLE str_MicrostepTesting[]        = "\nTesting recovery mode...";
+STRINGTABLE str_MicrostepTestFail[]       = "\nDrive not microstepping; recovery mode not enabled.\n";
+STRINGTABLE str_MicrostepApplied[]        = "Microstepping on. Up to %u algorithms will be tested before reporting errors.\n";
 STRINGTABLE str_MicrostepReseekOff[]      = "NOTE: re-seeking after sector errors turned off until board reset.\n";
 STRINGTABLE str_MicrostepRWCInUse[]       = "\nCannot reuse /HDSEL3 if reduced write current signal is used.\n";
 STRINGTABLE str_MicrostepTooManyHeads[]   = "\nCannot reuse /HDSEL3; %u disk drive heads configured.\n";
 STRINGTABLE str_MicrostepOff[]            = "OFF";
-STRINGTABLE str_MicrostepSteps[]          = "%u STEPS";
+STRINGTABLE str_MicrostepOn[]             = "ON";
 
 // mount DOS partition command
 STRINGTABLE str_DosTrack0Bad[]            = "No valid sectors read on track 0";

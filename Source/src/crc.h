@@ -18,7 +18,8 @@ public:
     XebecAdaptec,
     HDC9224,
     SM1040_ID,
-    SM1040_DATA    
+    SM1040_DATA,
+    ADT
   };
   
   virtual ~CRC() {};

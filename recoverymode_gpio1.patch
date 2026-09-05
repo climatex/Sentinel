@@ -1,10 +1,10 @@
 diff --git a/Source/src/commands.cpp b/Source/src/commands.cpp
-index ea9a9a7..7ee4c73 100644
+index 6c4fbb1..c2b1ae9 100644
 --- a/Source/src/commands.cpp
 +++ b/Source/src/commands.cpp
-@@ -2269,20 +2269,8 @@ void commandWrite(bool formatOnly)
- void commandMicrostep()
- {
+@@ -2361,19 +2361,7 @@ void commandMicrostep()
+   }
+   
    printf(str_MicrostepDescription);
 -  
 -  // too bad, we're out of pins here that can sink 48 mA :)
@@ -19,24 +19,23 @@ index ea9a9a7..7ee4c73 100644
 -    return;
 -  }
 -  
-   printf(str_EscGoBack);
 +
-   uint8_t microsteps = 0;
-   const uint8_t microstepsMax = 8; // an ST225 has eight algorithms maximum
-   while(true)
+   // test recovery mode if it works
+   printf(str_MicrostepTesting);
+   const bool test = hdd.testMicrostepping();
 diff --git a/Source/src/hdd.cpp b/Source/src/hdd.cpp
-index 5047a9b..0a2e624 100644
+index e9ad3f2..f18e050 100644
 --- a/Source/src/hdd.cpp
 +++ b/Source/src/hdd.cpp
-@@ -9,6 +9,7 @@ extern volatile bool g_SeekComplete;
- HDD::HDD()
- {
-   m_SeekForward = false;
-+  m_RecoveryMode = false;
-   m_ShiftRegister = 0;
+@@ -13,6 +13,7 @@ HDD::HDD()
    m_PhysicalCylinder = 0;
    m_PhysicalHead = 0;
-@@ -292,10 +293,10 @@ bool HDD::seekDrive(uint16_t toCylinder, uint8_t toHead)
+   
++  m_RecoveryMode = false;
+   m_MicroStepOnNoAddressMark = false;
+   m_MicroStepOnCRCError = false;
+   
+@@ -294,11 +295,11 @@ bool HDD::seekDrive(uint16_t toCylinder, uint8_t toHead)
    return true;
  }
  
@@ -44,19 +43,20 @@ index 5047a9b..0a2e624 100644
 +// GPIO1 connected to a 1K resistor to the base of a BJT NPN; emitter to ground, collector to /RECOVERYMODE (usually pin 16 of disk control cable)
  void HDD::microStep(bool perform)
  {
--  if (!m_MicroSteps || (m_Params.Heads > 8) || m_Params.UseReduceWriteCurrent)
-+  if (!m_MicroSteps)
+   const bool isEnabled = m_MicroStepOnNoAddressMark || m_MicroStepOnCRCError;
+-  if (!isEnabled || (m_Params.Heads > 8) || m_Params.UseReduceWriteCurrent)
++  if (!isEnabled)
    {
      return;
-   }  
-@@ -337,19 +338,19 @@ void HDD::testMicrostepping()
- 
- void HDD::microStepInternal(bool perform)
+   }
+@@ -344,19 +345,19 @@ bool HDD::testMicrostepping()
+ bool HDD::microStepInternal(bool perform, bool testing)
  {
--  if (!m_MicroSteps || (m_Params.Heads > 8) || m_Params.UseReduceWriteCurrent)
-+  if (!m_MicroSteps)
+   const bool isEnabled = testing || m_MicroStepOnNoAddressMark || m_MicroStepOnCRCError;
+-  if (!isEnabled || (m_Params.Heads > 8) || m_Params.UseReduceWriteCurrent)
++  if (!isEnabled)
    {
-     return;
+     return false;
    }  
    
    if (!perform)
@@ -73,7 +73,7 @@ index 5047a9b..0a2e624 100644
        sleep_ms(SLOWSEEK_SRT_MS);
        
        // disk must assert seek complete
-@@ -367,10 +368,10 @@ void HDD::microStepInternal(bool perform)
+@@ -379,10 +380,10 @@ bool HDD::microStepInternal(bool perform, bool testing)
    }
     
    // enter recovery mode if not already in it
@@ -88,18 +88,20 @@ index 5047a9b..0a2e624 100644
    }
    
 diff --git a/Source/src/hdd.h b/Source/src/hdd.h
-index 5cc8ce0..cfffd9b 100644
+index 59ac8f4..9a8a45d 100644
 --- a/Source/src/hdd.h
 +++ b/Source/src/hdd.h
-@@ -78,4 +78,5 @@ private:
+@@ -78,6 +78,7 @@ private:
    uint16_t m_PhysicalCylinder;
    uint8_t m_PhysicalHead;
-   uint8_t m_MicroSteps;
+   
 +  bool m_RecoveryMode;
+   bool m_MicroStepOnNoAddressMark;
+   bool m_MicroStepOnCRCError;
  };
 \ No newline at end of file
 diff --git a/Source/src/main.cpp b/Source/src/main.cpp
-index a6b2a57..39c9559 100644
+index 6421e2f..0f54120 100644
 --- a/Source/src/main.cpp
 +++ b/Source/src/main.cpp
 @@ -175,20 +175,21 @@ int main()
@@ -130,10 +132,10 @@ index a6b2a57..39c9559 100644
    // set initial states of the output shift register 74HC595
    // (Q0: HDSEL0, Q1: HDSEL1, Q2: HDSEL2, Q3: HDSEL3, Q4: STEP, Q5: DIR, Q6: DS, Q7: RLL/MFM)
 diff --git a/Source/src/stringtable.h b/Source/src/stringtable.h
-index 1046035..9e7ca8a 100644
+index 1758af0..bd92858 100644
 --- a/Source/src/stringtable.h
 +++ b/Source/src/stringtable.h
-@@ -211,15 +211,13 @@ STRINGTABLE str_WriteDetailsFormat[]      = "\nWill format %u cylinders.\n";
+@@ -226,9 +226,9 @@ STRINGTABLE str_WriteDetailsFormat[]      = "\nWill format %u cylinders.\n";
  STRINGTABLE str_WriteSeagateCylinder[]    = "Updating Seagate controller-reserved cylinder 0...";
  
  // microstepping command
@@ -144,11 +146,14 @@ index 1046035..9e7ca8a 100644
 +                                            "wire GPIO1 to a BJT NPN through a 1K resistor to base, emitter to GND,\n"
 +                                            "collector to the recovery mode signal of the disk control cable.\n"
                                              "Most likely, a jumper will need to be set for proper operation.\n";
- STRINGTABLE str_MicrostepCount[]          = "Microsteps to execute before reads (0-%u, 0: disable): ";
- STRINGTABLE str_MicrostepTesting[]        = "\nTesting recovery mode...";
+ STRINGTABLE str_MicrostepOnNoAddrMark[]   = "Microstepping on sector not found / no data address mark errors? Y/N: ";
+ STRINGTABLE str_MicrostepOnCRCErrors[]    = "Microstepping on uncorrectable CRC errors? Y/N: ";
+@@ -236,8 +236,6 @@ STRINGTABLE str_MicrostepTesting[]        = "\nTesting recovery mode...";
+ STRINGTABLE str_MicrostepTestFail[]       = "\nDrive not microstepping; recovery mode not enabled.\n";
+ STRINGTABLE str_MicrostepApplied[]        = "Microstepping on. Up to %u algorithms will be tested before reporting errors.\n";
  STRINGTABLE str_MicrostepReseekOff[]      = "NOTE: re-seeking after sector errors turned off until board reset.\n";
 -STRINGTABLE str_MicrostepRWCInUse[]       = "\nCannot reuse /HDSEL3 if reduced write current signal is used.\n";
 -STRINGTABLE str_MicrostepTooManyHeads[]   = "\nCannot reuse /HDSEL3; %u disk drive heads configured.\n";
  STRINGTABLE str_MicrostepOff[]            = "OFF";
- STRINGTABLE str_MicrostepSteps[]          = "%u STEPS";
+ STRINGTABLE str_MicrostepOn[]             = "ON";
  

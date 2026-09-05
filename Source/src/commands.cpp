@@ -21,6 +21,7 @@ OMTI* omti;
 XebecAdaptec* xebecAdaptec;
 HDC9224* hdc9224;
 SM1040* sm1040;
+ADT* adt;
 
 // low level format menu
 void formatMenu(LLF* format)
@@ -34,6 +35,7 @@ void formatMenu(LLF* format)
   xebecAdaptec = NULL;
   hdc9224 = NULL;  
   sm1040 = NULL;
+  adt = NULL;
   switch(llf->getType())
   {
   case LLF::FormatType::WD:
@@ -54,6 +56,9 @@ void formatMenu(LLF* format)
   case LLF::FormatType::SM1040:
     sm1040 = (SM1040*)llf;
     break;
+  case LLF::FormatType::ADT:
+    adt = (ADT*)llf;
+    break;
   }
   
   for (;;)
@@ -65,24 +70,14 @@ void formatMenu(LLF* format)
     hdd.selectDrive(false);
     printf("\n");
     
-    char microstepIndicator[10] = {0};
-    if (!hdd.getMicrostepping())
-    {
-      strcpy(microstepIndicator, str_MicrostepOff);
-    }
-    else
-    {
-      snprintf(microstepIndicator, sizeof(microstepIndicator), str_MicrostepSteps, hdd.getMicrostepping());
-      if (hdd.getMicrostepping() == 1)
-      {
-        microstepIndicator[strlen(microstepIndicator)-1] = 0; // steps -> step :)
-      }
-    }
+    bool microStep1;
+    bool microStep2;
+    hdd.getMicrostepping(microStep1, microStep2);
     
     strcat(menuOptions, "AHVRMFWB");
-    printf(str_LlfMenu, microstepIndicator);
+    printf(str_LlfMenu, (microStep1 || microStep2) ? str_MicrostepOn : str_MicrostepOff);
     
-    if (!sm1040) // add mount DOS option for all except this one
+    if (!sm1040 && !adt) // add mount DOS option for all except these
     {
       printf(str_LlfMountDOS);
       strcat(menuOptions, "I");
@@ -353,6 +348,21 @@ void commandAutodetect()
   delete sm1040;
   sm1040 = NULL;
   
+  // ADT 4700, no data field reads
+  adt = new ADT;
+  if (adt->analyzeTrack(MAX_SPT_LIMIT, false, sectorsPerTrack, startSector, sectorSizeBytes, interleave))
+  {
+    printf(str_DetectFormat);
+    printf("ADT");
+    
+    printf("\n");
+    delete adt;
+    adt = NULL;
+    return;
+  }
+  delete adt;
+  adt = NULL;
+  
   // Seagate ST21/22 - analyze cylinder 1
   if (hdd.getParams()->Cylinders > 1)
   {
@@ -554,11 +564,7 @@ void commandRawdiskOperation(bool readDiskIntoFile, const char* ext, uint16_t ch
     for (uint8_t head = 0; head < hdd.getParams()->Heads; head++)    
     {   
       memset(trackBuffer.data(), 0, trackBuffer.size());
-      hdd.seekDrive(cylinder, head);
-      if (readDiskIntoFile)
-      {
-        hdd.microStep(true);  // if reading, apply microstep if configured
-      }      
+      hdd.seekDrive(cylinder, head);    
       printf(str_CHInfo, cylinder, head);
       
       if (!hdd.checkReadyWriteFault())
@@ -1144,8 +1150,7 @@ void commandAnalyze()
   {
     for (uint8_t head = 0; head < hdd.getParams()->Heads; head++)    
     {   
-      hdd.seekDrive(cylinder, head);  
-      hdd.microStep(true);
+      hdd.seekDrive(cylinder, head);      
       
       bool thisVariableSectorSize = false; // flag to show "variable bytes" in the following status message
       bool thisHeadMismatch = false;       // shown with "@" at the end of line
@@ -1194,6 +1199,10 @@ void commandAnalyze()
       else if (hdc9224)
       {
         hdc9224->getCustomAnalyzeTrackResults(thisCylinderMismatch, thisHeadMismatch, dummy, dummy2); 
+      }
+      else if (adt)
+      {
+        adt->getCustomAnalyzeTrackResults(thisCylinderMismatch, thisHeadMismatch, dummy, dummy2);
       }
 
       diskNotEmpty |= true;
@@ -1359,11 +1368,14 @@ void commandHexdump()
     
     wd->setWorkingSectorSizeBytes(sectorSizeBytes);
     printf(str_EchoKey, key);
-  } 
+  }
+  else if (adt)
+  {
+    sectorSizeBytes = 256;
+  }
   
   hdd.seekDrive(cylinder, head);
-  hdd.microStep(true);
-  llf->readSector(sector);
+  llf->readSectorMicrostep(sector); // read with microstep, if enabled
   
   if (hdd.getLastResult() && (hdd.getLastResult() < HDD_STATUS_DATA_ERROR))
   {
@@ -1497,7 +1509,6 @@ void commandRead(bool verifyOnly)
     printf(str_ReadAnalyzeFirstTrack);
   }
   hdd.seekDrive(startCylinder, 0);
-  hdd.microStep(true);
   
   uint8_t sectorsPerTrack;
   uint8_t startSector;
@@ -1566,6 +1577,43 @@ void commandRead(bool verifyOnly)
     printf(str_DeleteLine);
   }
   
+  // if expected sectors per track were specified, allow to customize starting sector number:
+  // an override is then applied, if the real sectors per track count is smaller
+  
+  // example: a track is normally expected to have 17 SPT and start from 1;
+  // suddenly one of the tracks has the first two sectors missing (3 4 5 ... 17) - but not on purpose, like a special format.
+  // with expectedSectorsPerTrack 0: would only read and save 15 SPT to the image file; the image would be two sectors short;
+  // with expectedSectorsPerTrack 17 and no expectedStartSector: startSector autodetected at 3, 
+  //                                                             would read from 3-17 and report 18, 19 as missing and zero padded in the end;
+  // with expectedSectorsPerTrack 17 and expectedStartSector 1: reports and zero-pads 1, 2 missing; 3-17 read OK.
+  
+  uint16_t expectedStartSector = (uint16_t)-1;
+  if (expectedSectorsPerTrack)
+  {
+    const uint8_t max = 256-sectorsPerTrack;
+    printf(str_ReadExpectedStartSec, expectedSectorsPerTrack);
+    
+    while(true)
+    {
+      printf(str_ChooseExpectedStartSec, max, startSector);
+      const char* promptStr = prompt(3, str_DecimalInputEsc, true);
+      if (!promptStr) // Esc: starting sector not customized, use each analysis result
+      {
+        printf("\n");
+        break;
+      }
+      uint16_t expected = (uint16_t)atoi(promptStr);
+      if (expected <= max)
+      {  
+        if (!expected && !strlen(getPromptBuffer())) printf("0");
+        expectedStartSector = expected;
+        printf("\n");
+        break;
+      }    
+      printf(str_DeleteLine);
+    }
+  }
+  
   // file picker
   if (!verifyOnly)
   {
@@ -1610,7 +1658,6 @@ void commandRead(bool verifyOnly)
       
       hdd.seekDrive(cylinder, head);
 _afterSeek:
-      hdd.microStep(true);
       
       if (!llf->analyzeTrack(MAX_SPT_LIMIT, false, sectorsPerTrack, startSector, sectorSizeBytes, interleave))
       {
@@ -1642,6 +1689,19 @@ _afterSeek:
               goto _afterSeek;
             }
           }
+          // ADT: dtto
+          if (adt && adt->isTrackRelocated())
+          {
+            uint16_t relocationCyl;
+            uint8_t relocationHd;
+            adt->getRelocation(relocationCyl, relocationHd);
+            
+            if ((relocationCyl < hdd.getParams()->Cylinders) && (relocationHd < hdd.getParams()->Heads))
+            {
+              hdd.seekDrive(relocationCyl, relocationHd);
+              goto _afterSeek;
+            }
+          }          
           
           trackError = true;
           unreadableTracks++;
@@ -1719,6 +1779,10 @@ _afterSeek:
       {
         hdc9224->getCustomAnalyzeTrackResults(dummy, dummy, logicalCylinder, logicalHead);
       }
+      else if (adt)
+      {
+        adt->getCustomAnalyzeTrackResults(dummy, dummy, logicalCylinder, logicalHead);
+      }
 
       // prepare a sectors table of the original format interleave for the fastest track read
       // if returned interleave == 0: unknown, or missing sectors on track - fallback to 1:1
@@ -1729,14 +1793,20 @@ _afterSeek:
       }
       if (expectedSectorsPerTrack) // override detected
       {
+        // track has less sectors than expected: check if the start sector number is also overridden
+        if ((sectorsPerTrack < expectedSectorsPerTrack) && (expectedStartSector != (uint16_t)-1))
+        {
+          startSector = expectedStartSector;
+        }
+        
         sectorsPerTrack = expectedSectorsPerTrack;
-      }       
+      }
       LLF::getInterleaveTable(sectorsPerTrack, startSector, interleave, sectors);      
       
       // read track with original interleave
       for (const uint8_t& sector : sectors)
       {
-        llf->readSector(sector, &logicalCylinder, &logicalHead);
+        llf->readSectorMicrostep(sector, &logicalCylinder, &logicalHead); // read with microstep, if enabled
         uint8_t result = hdd.getLastResult();
 
         if (result != HDD_STATUS_OK)
@@ -1769,7 +1839,7 @@ _afterSeek:
           if (seagate && (result == HDD_STATUS_NO_SECTOR_ID) && useSpareSector)
           {
             // manually read spare sector ID 0xFE and update last result
-            llf->readSector(0xFE, &logicalCylinder, &logicalHead);
+            llf->readSectorMicrostep(0xFE, &logicalCylinder, &logicalHead);
             result = hdd.getLastResult();            
           }
           
@@ -1931,7 +2001,7 @@ void commandWrite(bool formatOnly)
   // enter format parameters
   printf(str_WriteParameters);
     
-  uint16_t sectorSizeBytes = 512;
+  uint16_t sectorSizeBytes = adt ? 256 : 512;
   if (!wd) // allow customizing sector size for WD
   {
     printf(str_SectorSizeBytes, sectorSizeBytes);
@@ -1971,6 +2041,11 @@ void commandWrite(bool formatOnly)
   if (seagate) // non-negotiable
   {
     sectorsPerTrack = hdd.isSeparatorRLL() ? 26 : 17;
+    printf(str_SectorsPerTrack, sectorsPerTrack);
+  }
+  else if (adt) // non-negotiable
+  {
+    sectorsPerTrack = 32;
     printf(str_SectorsPerTrack, sectorsPerTrack);
   }
   else
@@ -2024,33 +2099,40 @@ void commandWrite(bool formatOnly)
   
   // starting sector
   uint8_t startSector = 0;
-  uint8_t startSectorMax = sm1040 || seagate ? 64-sectorsPerTrack : 256-sectorsPerTrack; // 6 bits or 8 bits used for sector number
-  while(true)
+  if (adt) // non-negotiable
   {
-    if (wd) // show default for XT and AT
-    {
-      printf(str_ChooseStartSectorXTAT, startSector, startSectorMax);
-    }
-    else // default: 0
-    {
-      printf(str_ChooseStartSectorDef, startSector, startSectorMax, 0);
-    }
-    const char* promptStr = prompt(3, str_DecimalInputEsc, true);
-    if (!promptStr)
-    {
-      printf("\n");
-      return;
-    }
-    const uint16_t start = (uint16_t)atoi(promptStr);
-    if (start <= startSectorMax)
-    {  
-      startSector = start;
-      if (!startSector && !strlen(getPromptBuffer())) printf("0");
-      printf("\n");
-      break;
-    }    
-    printf(str_DeleteLine);
+    printf(str_StartSector, startSector);
   }
+  else
+  {
+    uint8_t startSectorMax = sm1040 || seagate ? 64-sectorsPerTrack : 256-sectorsPerTrack; // 6 bits or 8 bits used for sector number
+    while(true)
+    {
+      if (wd) // show default for XT and AT
+      {
+        printf(str_ChooseStartSectorXTAT, startSector, startSectorMax);
+      }
+      else // default: 0
+      {
+        printf(str_ChooseStartSectorDef, startSector, startSectorMax, 0);
+      }
+      const char* promptStr = prompt(3, str_DecimalInputEsc, true);
+      if (!promptStr)
+      {
+        printf("\n");
+        return;
+      }
+      const uint16_t start = (uint16_t)atoi(promptStr);
+      if (start <= startSectorMax)
+      {  
+        startSector = start;
+        if (!startSector && !strlen(getPromptBuffer())) printf("0");
+        printf("\n");
+        break;
+      }    
+      printf(str_DeleteLine);
+    }
+  }  
  
   // format interleave
   uint8_t interleave = 1;
@@ -2283,6 +2365,14 @@ void commandWrite(bool formatOnly)
 
 void commandMicrostep()
 {
+  hdd.seekDrive(0, 0);
+  if (!hdd.checkReadyWriteFault())
+  {
+    printf(hdd.getLastResultMessage());
+    printf("\n");
+    return;    
+  }
+  
   printf(str_MicrostepDescription);
   
   // too bad, we're out of pins here that can sink 48 mA :)
@@ -2297,40 +2387,47 @@ void commandMicrostep()
     return;
   }
   
-  printf(str_EscGoBack);
-  uint8_t microsteps = 0;
-  const uint8_t microstepsMax = 8; // an ST225 has eight algorithms maximum
-  while(true)
+  // test recovery mode if it works
+  printf(str_MicrostepTesting);
+  const bool test = hdd.testMicrostepping();
+     
+  printf(" ");
+  printf(test ? str_OK : str_FAIL);
+  printf("\n");
+  
+  if (!test)
   {
-    printf(str_MicrostepCount, microstepsMax);
-    const char* promptStr = prompt(1, str_DecimalInputEsc, true);
-    if (!promptStr)
-    {
-      printf("\n");
-      return;
-    }
-    microsteps = (uint8_t)atoi(promptStr);
-    if (microsteps <= microstepsMax)
-    {  
-      if (!microsteps && !strlen(getPromptBuffer())) printf("0");
-      printf("\n");
-      break;
-    }
-    
-    printf(str_RawdiskCustomTrackOver);
+    printf(str_MicrostepTestFail);
+    return;
   }
   
-  if (microsteps)
+  // configure when to apply microstep
+  printf(str_EscGoBack);  
+  printf(str_MicrostepOnNoAddrMark);
+  char key = toupper(readKey("YN\e"));        
+  if (key == '\e') // ESC key returns to main menu
   {
-    hdd.setMicrostepping(microsteps);
-    
-    // test recovery mode if it works; stops on error if it doesn't
-    printf(str_MicrostepTesting);
-    hdd.testMicrostepping();
-       
-    printf(" ");
-    printf(str_OK);
     printf("\n");
+    return;
+  }
+  printf(str_EchoKey, key);
+  const bool onNoAddressMark = key == 'Y';
+  
+  printf(str_MicrostepOnCRCErrors);
+  key = toupper(readKey("YN\e"));        
+  if (key == '\e')
+  {
+    printf("\n");
+    return;
+  }
+  printf(str_EchoKey, key);
+  const bool onCRCError = key == 'Y';
+  
+  hdd.setMicrostepping(onNoAddressMark, onCRCError);
+  if (onNoAddressMark || onCRCError)
+  {
+    printf("\n");
+    printf(str_MicrostepApplied, RECOVERY_MODE_MICROSTEPS);
     
     // turn off reseeking if enabled
     if (hdd.getParams()->ReseekOnSectorErrors)
@@ -2338,15 +2435,5 @@ void commandMicrostep()
       hdd.getParams()->ReseekOnSectorErrors = false;
       printf(str_MicrostepReseekOff);
     }
-  }
-  else
-  {
-    // turn off
-    if (hdd.getMicrostepping())
-    {
-      hdd.microStep(false);
-    }
-    
-    hdd.setMicrostepping(0);
   }
 }

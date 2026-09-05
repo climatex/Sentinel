@@ -25,6 +25,7 @@
 
 // low-level formats
 #define READ_SECTOR_ATTEMPTS        10      // how many attempts to read a sector (if it has been found) before failing
+#define RECOVERY_MODE_MICROSTEPS    8       // Recovery Mode (Seagate) microstepping: maximum number of how many microstep algorithms to try
 
 // UI defines
 #define MAX_PROMPT_LEN              100     // prompt() buffer size
@@ -76,6 +77,7 @@
 #include "hdc9224.h"
 #include "xebec_adaptec.h"
 #include "sm1040.h"
+#include "adt.h"
 
 // PIO
 #include "sampler.pio.h"

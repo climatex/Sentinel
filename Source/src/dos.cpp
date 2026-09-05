@@ -48,9 +48,8 @@ unsigned int dosDiskRead(uint8_t pdrv, uint8_t* buff, uint64_t sec, unsigned int
   uint8_t sector;
   dosConvertLogicalSectorToCHS(sec, cyl, head, sector);
   
-  hdd.seekDrive(cyl, head);
-  hdd.microStep(true); // reading, do microstep if configured
-  fmt->readSector(sector);
+  hdd.seekDrive(cyl, head);  
+  fmt->readSectorMicrostep(sector); // reading, do microstep if configured
   
   // allow ECC
   if (hdd.getLastResult() && (hdd.getLastResult() != HDD_STATUS_DATA_CORRECTED))

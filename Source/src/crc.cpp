@@ -54,6 +54,7 @@ CRC32::CRC32(CRC::Type type)
     m_polynomial = 0x0104C981UL;
     break;   
   case XebecAdaptec:
+  case ADT:
     m_initial = 0;
     m_polynomial = 0x00A00805UL;
     break;

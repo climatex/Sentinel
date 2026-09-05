@@ -12,7 +12,9 @@ HDD::HDD()
   m_ShiftRegister = 0;
   m_PhysicalCylinder = 0;
   m_PhysicalHead = 0;
-  m_MicroSteps = 0;
+  
+  m_MicroStepOnNoAddressMark = false;
+  m_MicroStepOnCRCError = false;
   
   m_Result = HDD_STATUS_OK;
   m_ResultMessage = str_Empty;
@@ -193,7 +195,7 @@ bool HDD::seekDrive(uint16_t toCylinder, uint8_t toHead)
 { 
   // make sure the drive is selected and not in recovery mode
   selectDrive();
-  microStepInternal(false);
+  microStepInternal(false, false);
   
   // set head
   if (m_PhysicalHead != toHead)
@@ -295,51 +297,56 @@ bool HDD::seekDrive(uint16_t toCylinder, uint8_t toHead)
 // reusing the HDSEL3 line wired up to the RECOVERY MODE signal of the hard drive
 void HDD::microStep(bool perform)
 {
-  if (!m_MicroSteps || (m_Params.Heads > 8) || m_Params.UseReduceWriteCurrent)
+  const bool isEnabled = m_MicroStepOnNoAddressMark || m_MicroStepOnCRCError;
+  if (!isEnabled || (m_Params.Heads > 8) || m_Params.UseReduceWriteCurrent)
   {
-    return;
-  }  
-  selectDrive();
- 
-  if (!perform) // cancel
-  {
-    microStepInternal(false);
     return;
   }
   
-  for (uint8_t step = 0; step < m_MicroSteps; step++)
-  {
-    microStepInternal(true);
-  }
+  selectDrive();
+  microStepInternal(perform, false);
 }
 
-void HDD::testMicrostepping()
+bool HDD::testMicrostepping()
 {
   // make sure we're at track 0, then set direction forward and do 1 microstep
   seekDrive(0, 0);
   m_ShiftRegister |= 0x20;
   updateShiftRegister();
   sleep_us(1);
-  microStepInternal(true);
+  
+  // testing flag on
+  bool result = microStepInternal(true, true);
   
   // if we're past cyl 0, it's not good
-  if (!isAtCylinder0())
+  if (!result || !isAtCylinder0())
   {
-    fatalError(str_DriveMicrostepFailure);
+    // set direction backward and recalibrate back to 0
+    m_ShiftRegister &= 0xDF;
+    updateShiftRegister();
+    sleep_us(1);
+    recalibrate();
+    
+    selectDrive(false);
+    return false;
   }
     
   // restore
-  microStepInternal(false);
+  result = microStepInternal(false, true);
   m_ShiftRegister &= 0xDF;
   updateShiftRegister();
   sleep_us(1);
+  
+  selectDrive(false);  
+  return result;
 }
 
-void HDD::microStepInternal(bool perform)
+bool HDD::microStepInternal(bool perform, bool testing)
 {
-  if (!m_MicroSteps || (m_Params.Heads > 8) || m_Params.UseReduceWriteCurrent)
+  const bool isEnabled = testing || m_MicroStepOnNoAddressMark || m_MicroStepOnCRCError;
+  if (!isEnabled || (m_Params.Heads > 8) || m_Params.UseReduceWriteCurrent)
   {
-    return;
+    return false;
   }  
   
   if (!perform)
@@ -358,12 +365,17 @@ void HDD::microStepInternal(bool perform)
       {
         if (time_reached(deadline))
         {      
+          if (testing)
+          {
+            return false;
+          }
+          
           fatalError(str_DriveMicrostepFailure);
         }
       }      
     }
     
-    return;
+    return true;
   }
    
   // enter recovery mode if not already in it
@@ -388,9 +400,16 @@ void HDD::microStepInternal(bool perform)
   {
     if (time_reached(deadline))
     {
+      if (testing)
+      {
+        return false;
+      }
+      
       fatalError(str_DriveMicrostepFailure);
     }
   }
+  
+  return true;
 }
 
 void HDD::setSeparatorRLL(bool rll)
