@@ -93,51 +93,75 @@ void CRC32::add(uint8_t byte)
 
 bool CRC32::tryComputeCorrection(uint8_t* buffer, size_t count)
 {
-  if (!hdd.getParams()->CorrectCRCErrors)
+  if (!hdd.getParams()->CorrectCRCErrors ||
+      !count ||
+      !m_crc ||
+      !(m_polynomial & 1UL)) // does not work with even polynomials
   {
     return false;
   }
-  
-  const uint8_t maxBurstLen = 11;
-  uint32_t syndrome = m_crc;
-  uint32_t mask = ~((1UL << maxBurstLen) - 1);
-  uint32_t totalBits = count*8;
 
-  // reverse walk
-  for (uint32_t shift = 0; shift < totalBits; shift++)
+  const uint8_t crcBits = 32;
+  const uint8_t maxBurstLen = 11;
+  const uint32_t totalBits = count*8;
+
+  auto reverseStep = [this](uint32_t crc)
   {
-    // error pattern found?
-    if ((syndrome & mask) == 0)
+    if (crc & 1UL)
     {
-      uint32_t errorIndex = totalBits - 1 - shift;
-      
-      // apply correction
-      for (uint32_t i = 0; i < maxBurstLen; i++)
-      {
-        if (syndrome & (1UL << i))
-        {
-          uint32_t targetBit = errorIndex + i;
-          if (targetBit >= totalBits)
-          {
-            break;
-          }
-          
-          buffer[targetBit / 8] ^= (1 << (7 - (targetBit % 8))); // MSB first
-        }
-      }
-      
-      return true; // corrected
-    }
-    
-    // step syndrome backward
-    if (syndrome & 1)
-    {
-      syndrome = ((syndrome ^ m_polynomial) >> 1) | 0x80000000UL;
+      crc ^= m_polynomial;
+      crc >>= 1;
+      crc |= 0x80000000UL;
     }
     else
     {
-      syndrome = syndrome >> 1;
+      crc >>= 1;
     }
+
+    return crc;
+  };
+
+  // reverse walk
+  uint32_t syndrome = m_crc;
+  for (uint32_t endBit = totalBits; endBit-- > 0;)
+  {
+    // remove the x^32 factor
+    uint32_t errorPattern = syndrome;
+    for (uint8_t i = 0; i < crcBits; i++)
+    {
+      errorPattern = reverseStep(errorPattern);
+    }
+
+    // check for a nonzero burst of <= 11 bits
+    if (errorPattern && (errorPattern < (1UL << maxBurstLen)))
+    {
+      const uint8_t burstLen = 32 - __builtin_clz(errorPattern);
+
+      // canonical burst: first and last bits are 1
+      if (errorPattern & 1UL)
+      {
+        const uint32_t startBit = endBit + 1 - burstLen;
+
+        // is the complete burst inside data?
+        if ((startBit + burstLen) <= totalBits)
+        {
+          for (uint8_t i = 0; i < burstLen; i++)
+          {
+            // apply correction
+            if (errorPattern & (1UL << i))
+            {
+              const uint32_t bit = endBit - i;
+              buffer[bit / 8] ^= (uint8_t)(1U << (7 - (bit % 8)));
+            }
+          }
+
+          return true; // corrected
+        }
+      }
+    }
+
+    // step syndrome backward
+    syndrome = reverseStep(syndrome);
   }
   
   // multiple errors or of larger burst
@@ -179,51 +203,71 @@ void CRC56::add(uint8_t byte)
 
 bool CRC56::tryComputeCorrection(uint8_t* buffer, size_t count)
 {
-  // as above  
-  if (!hdd.getParams()->CorrectCRCErrors)
+  // as above - for 56 bits and mask off top 8 bits of uint64
+  if (!hdd.getParams()->CorrectCRCErrors ||
+      !count ||
+      !m_crc ||
+      !(m_polynomial & 1ULL))
   {
     return false;
   }
-  
-  const uint64_t mask56 = 0xFFFFFFFFFFFFFFULL;
-  
-  const uint8_t maxBurstLen = 22;
-  uint64_t syndrome = m_crc;
-  uint64_t mask = ~((1ULL << maxBurstLen) - 1) & mask56; // bits 63-56 masked
-  uint32_t totalBits = count*8;
 
-  for (uint32_t shift = 0; shift < totalBits; shift++)
+  const uint64_t mask56 = 0xFFFFFFFFFFFFFFULL;
+  const uint8_t crcBits = 56;
+  const uint8_t maxBurstLen = 22;
+  const uint32_t totalBits = count*8;
+
+  auto reverseStep = [this](uint64_t crc)
   {
-    if ((syndrome & mask) == 0)
+    if (crc & 1ULL)
     {
-      uint32_t errorIndex = totalBits - 1 - shift;
-      
-      for (uint32_t i = 0; i < maxBurstLen; i++)
-      {
-        if (syndrome & (1ULL << i))
-        {
-          uint32_t targetBit = errorIndex + i;
-          if (targetBit >= totalBits)
-          {
-            break;
-          }
-          
-          buffer[targetBit / 8] ^= (1 << (7 - (targetBit % 8)));
-        }
-      }
-      
-      return true;
-    }
-    
-    if (syndrome & 1)
-    {
-      syndrome = (((syndrome ^ m_polynomial) >> 1) | 0x80000000000000ULL) & mask56;
+      crc ^= m_polynomial;
+      crc >>= 1;
+      crc |= 0x80000000000000ULL;
     }
     else
     {
-      syndrome = syndrome >> 1;
+      crc >>= 1;
     }
+
+    return crc & mask56;
+  };
+
+  uint64_t syndrome = m_crc;
+  for (uint32_t endBit = totalBits; endBit-- > 0;)
+  {
+    uint64_t errorPattern = syndrome;
+    for (uint8_t i = 0; i < crcBits; i++)
+    {
+      errorPattern = reverseStep(errorPattern);
+    }
+
+    if (errorPattern && (errorPattern < (1ULL << maxBurstLen)))
+    {
+      const uint8_t burstLen = 64 - __builtin_clzll(errorPattern);
+
+      if (errorPattern & 1ULL)
+      {
+        const uint32_t startBit = endBit + 1 - burstLen;
+        
+        if ((startBit + burstLen) <= totalBits)
+        {
+          for (uint8_t i = 0; i < burstLen; i++)
+          {
+            if (errorPattern & (1ULL << i))
+            {
+              const uint32_t bit = endBit - i;
+              buffer[bit / 8] ^= (uint8_t)(1U << (7 - (bit % 8)));
+            }
+          }
+
+          return true;
+        }
+      }
+    }
+
+    syndrome = reverseStep(syndrome);
   }
-  
+
   return false;
 }
