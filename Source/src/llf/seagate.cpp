@@ -1,5 +1,5 @@
 // Sentinel (c) 2026 J. Bogin, https://boginjr.com
-// Seagate ST21/ST22 MFM format, PC/AT (TODO: RLL)
+// Seagate ST21/ST22 MFM/RLL format, PC/AT
 
 #include "config.h"
 
@@ -8,8 +8,8 @@ extern volatile uint64_t g_IndexCount;
 
 Seagate::Seagate()
 {
-  // one sector buffer 512B + 1 byte data address mark + 4 bytes ECC
-  m_SectorBuffer.resize(517, 0);
+  // one sector buffer 512B + 1 byte data address mark (RLL: 2 bytes) + 4 bytes ECC
+  m_SectorBuffer.resize(518, 0);
   
   // custom analyzeTrack() results
   m_AnalyzeCylNumberMismatch = false;
@@ -27,7 +27,8 @@ Seagate::Seagate()
 uint8_t* Seagate::getSectorBuffer()
 { 
   // single sector buffer of a data field, 512 bytes
-  return &m_SectorBuffer[1]; // F8 data address mark ignored during data field read
+  // F8 or A1 F8 data address mark ignored during data field read
+  return &m_SectorBuffer[hdd.isSeparatorRLL() ? 2 : 1];
 }
 
 bool Seagate::analyzeTrack(uint8_t idSamples, bool printOut, uint8_t& sectorsPerTrack, uint8_t& startSector, uint16_t& sectorSizeBytes, uint8_t& interleave)
@@ -163,7 +164,13 @@ bool Seagate::scanID(uint16_t* cylinder, uint8_t* head, uint8_t* sector, uint16_
   const uint64_t startCount = g_IndexCount;
   while ((g_IndexCount - startCount) < 2)
   {
+    // MFM: 1st byte A1 consumed by findSync() and not part of the read
+    const uint8_t idCompare = hdd.isSeparatorRLL() ? 0xA1 : 0xFE;    
     CRC32 crc(CRC::Type::Seagate);
+    if (!hdd.isSeparatorRLL())
+    {
+      crc.add(0xA1); 
+    }
     
     if (!endec.lockPLL(TIMEOUT_DISK_ROTATION_US))
     {
@@ -173,8 +180,8 @@ bool Seagate::scanID(uint16_t* cylinder, uint8_t* head, uint8_t* sector, uint16_
 
     uint16_t partial;
     uint8_t bitShift;
-    const uint8_t status = endec.findSync(DEFAULT_MFM_SYNC_PATTERN, partial, bitShift);
-
+    const uint8_t status = endec.findSync(hdd.isSeparatorRLL() ? 0x8091 : // special sync mark: 0x8090 | first 6 RLL bits of 0xA1
+                                                                 DEFAULT_MFM_SYNC_PATTERN, partial, bitShift);
     if (status == HDD_STATUS_TIMEOUT)
     {
       endec.setReadGate(false);
@@ -189,15 +196,15 @@ bool Seagate::scanID(uint16_t* cylinder, uint8_t* head, uint8_t* sector, uint16_
       endec.setReadGate(false);
       continue;
     }
-    
-    crc.add(0xA1); // consumed by findSync() and not part of the read
-    
+        
     size_t count = 9;
-    uint8_t idField[9]; // [FE][HEAD_CYLHI][CYL_LO][SECTOR][FLAG] + 4 bytes CRC
-    const bool success = endec.decodeMFM(idField, count, partial, bitShift, &crc);
+    uint8_t idField[9]; // MFM: [A1 consumed by findSync][FE][HEAD_CYLHI][CYL_LO][SECTOR][FLAG] + 4 bytes CRC
+                        // RLL: [A1][HEAD_CYLHI][CYL_LO][SECTOR][FLAG] + 4 bytes CRC
+    const bool success = hdd.isSeparatorRLL() ? endec.decodeRLL(idField, count, partial, bitShift, &crc) :
+                                                endec.decodeMFM(idField, count, partial, bitShift, &crc);
     endec.setReadGate(false);  // read gate can be deasserted now
-   
-    if (!success || (crc.get() != 0) || (idField[0] != 0xFE))
+    
+    if (!success || (crc.get() != 0) || (idField[0] != idCompare))
     {
       continue;
     }
@@ -283,16 +290,27 @@ bool Seagate::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrid
   uint16_t cylinder = overrideCyl ? *overrideCyl : hdd.getPhysicalCylinder();
   uint8_t head = overrideHead ? *overrideHead : hdd.getPhysicalHead();
   
-  // A1 consumed by findSync(), ident F8, 512 bytes, 4 byte CRC
-  size_t dataFieldCount = 517;  
+  // A1 (MFM: consumed by findSync(), RLL: part of buffer); ident F8, 512 bytes, 4 byte CRC
+  size_t dataFieldCount = 517;
+  if (hdd.isSeparatorRLL())
+  {
+    dataFieldCount++; // A1
+  }
+  
+  // this in RLL is hard to sync
+  uint8_t readAttempts = READ_SECTOR_ATTEMPTS;
+  if (hdd.isSeparatorRLL())
+  {
+    readAttempts *= 2;
+  }
       
-  for (uint8_t readAttempt = 0; readAttempt < READ_SECTOR_ATTEMPTS; readAttempt++)
+  for (uint8_t readAttempt = 0; readAttempt < readAttempts; readAttempt++)
   {
     CRC32 crc(CRC::Type::Seagate);
     bool found = false;
     
     // reseek on last attempt
-    if (hdd.getParams()->ReseekOnSectorErrors && (READ_SECTOR_ATTEMPTS > 1) && (readAttempt == READ_SECTOR_ATTEMPTS-1))
+    if (hdd.getParams()->ReseekOnSectorErrors && (READ_SECTOR_ATTEMPTS > 1) && (readAttempt == readAttempts-1))
     {
       const uint16_t cyl = hdd.getPhysicalCylinder();
       const uint8_t hd = hdd.getPhysicalHead();
@@ -300,7 +318,12 @@ bool Seagate::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrid
       hdd.seekDrive(cyl, hd);        
     }
     
-    for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT; locateAttempt++)
+    uint8_t locateAttempts = MAX_SPT_LIMIT;
+    if (hdd.isSeparatorRLL())
+    {
+      locateAttempts *= 2;
+    }
+    for (uint8_t locateAttempt = 0; locateAttempt < locateAttempts; locateAttempt++)
     {
       uint16_t scanCyl;
       uint8_t scanHead;
@@ -334,7 +357,8 @@ bool Seagate::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrid
     
     uint16_t partial;
     uint8_t bitShift;
-    uint8_t status = endec.findSync(DEFAULT_MFM_SYNC_PATTERN, partial, bitShift); 
+    uint8_t status = endec.findSync(hdd.isSeparatorRLL() ? 0x8091 : // special sync mark: 0x8090 | first 6 RLL bits of 0xA1
+                                                           DEFAULT_MFM_SYNC_PATTERN, partial, bitShift);                                                           
     if (status == HDD_STATUS_TIMEOUT)
     {
       endec.setReadGate(false);
@@ -350,20 +374,26 @@ bool Seagate::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrid
       continue;
     }
     
-    crc.add(0xA1); // part of computation
-    const bool success = endec.decodeMFM(m_SectorBuffer.data(), dataFieldCount, partial, bitShift, &crc);    
+    if (!hdd.isSeparatorRLL())
+    {
+      crc.add(0xA1); // MFM: consumed by findSync() and not part of the read  
+    }
+    
+    const bool success = hdd.isSeparatorRLL() ? endec.decodeRLL(m_SectorBuffer.data(), dataFieldCount, partial, bitShift, &crc) :
+                                                endec.decodeMFM(m_SectorBuffer.data(), dataFieldCount, partial, bitShift, &crc);   
     endec.setReadGate(false); // read gate can be deasserted now
     
     // data address mark must be F8
-    if (!success || (m_SectorBuffer[0] != 0xF8))
-    {
+    uint8_t idx = hdd.isSeparatorRLL() ? 1 : 0;
+    if (!success || (m_SectorBuffer[idx] != 0xF8))
+    {    
       continue;
     }
 
     if (crc.get() != 0)
     {
       // last, try computing correction
-      if (readAttempt == READ_SECTOR_ATTEMPTS-1)
+      if (readAttempt == readAttempts-1)
       {
         if (!crc.tryComputeCorrection(m_SectorBuffer.data(), dataFieldCount))
         {
@@ -398,19 +428,44 @@ bool Seagate::writeSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overri
   }
   
   std::vector<uint8_t> data;
-  std::vector<size_t> clockBits;
+  std::vector<size_t> syncOffsets;
   
-  // reserve 13 bytes zero preamble, A1 (dropped clock), F8 and sector data, followed by CRC (4 bytes) and two zero bytes
+  // reserve 13 bytes zero preamble, A1 (MFM: dropped clock), F8 and sector data, followed by CRC (4 bytes) and two zero bytes
   data.reserve(533);
   
   // prepare CRC counter
   CRC32 crc(CRC::Type::Seagate);
     
   // append 13 bytes preamble and info where to insert MFM/RLL sync
-  data.insert(data.end(), 13, 0); 
+  if (!hdd.isSeparatorRLL())
+  {
+    data.insert(data.end(), 13, 0); // MFM: 13 zeros
+  }
+  else
+  {
+    // custom gap: RLL 011 repeated 8x
+    data.push_back(0x6D);
+    data.push_back(0xB6);
+    data.push_back(0xDB);
+    
+    // preamble: RLL 100100 repeated 16 times
+    for (uint8_t i = 0; i < 4; i++)
+    {
+      data.push_back(0x92);
+      data.push_back(0x49);
+      data.push_back(0x24);
+    }
+  }  
   
-  // insert 0xA1, drop Ck2
-  clockBits.push_back(data.size() * 8 + 5);  
+  // insert 0xA1; MFM: drop Ck2
+  if (!hdd.isSeparatorRLL())
+  {
+    syncOffsets.push_back(data.size() * 8 + 5);    
+  }
+  else
+  {
+    syncOffsets.push_back(data.size()); // byte offset where to insert RLL syncmark
+  }  
   data.push_back(0xA1); 
   crc.add(0xA1); // used with CRC computation  
 
@@ -439,14 +494,26 @@ bool Seagate::writeSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overri
   data.push_back(0);
       
   std::vector<uint32_t> dmaBuffer;
-  endec.encodeMFM(data.data(), data.size(), clockBits, dmaBuffer);
+  if (hdd.isSeparatorRLL())
+  {
+    endec.encodeRLL(data.data(), data.size(), syncOffsets, dmaBuffer, true); // Seagate data field
+  }
+  else
+  {
+    endec.encodeMFM(data.data(), data.size(), syncOffsets, dmaBuffer);
+  } 
   endec.prepareWriteDMA(dmaBuffer.data(), dmaBuffer.size());  
   
   uint16_t cylinder = overrideCyl ? *overrideCyl : hdd.getPhysicalCylinder();
   uint8_t head = overrideHead ? *overrideHead : hdd.getPhysicalHead();  
 
-  bool found = false;  
-  for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT; locateAttempt++)
+  bool found = false;
+  uint8_t locateAttempts = MAX_SPT_LIMIT;
+  if (hdd.isSeparatorRLL())
+  {
+    locateAttempts *= 2;
+  }
+  for (uint8_t locateAttempt = 0; locateAttempt < locateAttempts; locateAttempt++)
   {
     uint16_t scanCyl;
     uint8_t scanHead;
@@ -518,7 +585,7 @@ bool Seagate::formatWriteTrack(const std::vector<uint8_t>& interleave, const uin
   // leave some slack (next /INDEX stops write)
   std::vector<uint8_t> track;
   const uint16_t maxTrackBytes = endec.getMaximumTrackBytes();
-  track.resize(maxTrackBytes, hdd.isSeparatorRLL() ? 0x33 : 0x4E); // fill with gap byte
+  track.resize(maxTrackBytes, hdd.isSeparatorRLL() ? 0xFF : 0x4E); // fill with gap byte
   
   // bit/byte offsets where special sync marks will appear
   std::vector<size_t> syncOffsets;  
@@ -534,28 +601,44 @@ bool Seagate::formatWriteTrack(const std::vector<uint8_t>& interleave, const uin
       break;
     }
     
-    // ID field preamble: 10 bytes zeros
-    memset(data+offset, 0, 10);
-    offset += 10;
-    
-    CRC32 crc(CRC::Type::Seagate);
-    
-    // 0xA1 with dropped clock or RLL 0x8090 follows
-    crc.add(0xA1); // used with CRC computation for RLL, but 0xA1 is not physically written then
+    // ID field preamble
     if (!hdd.isSeparatorRLL())
     {
-      syncOffsets.push_back(offset * 8 + 5); // bit where to drop Ck2
-      data[offset++] = 0xA1;
+      memset(data+offset, 0, 10); // MFM: 10 zeros
+      offset += 10;
     }
     else
     {
-      syncOffsets.push_back(offset); // byte offset for RLL 0x8090
+      // preamble: RLL 100100 repeated 16 times
+      for (uint8_t i = 0; i < 4; i++)
+      {
+        data[offset++] = 0x92;
+        data[offset++] = 0x49;
+        data[offset++] = 0x24;
+      }
     }
     
-    // IDENT 0xFE
-    const uint8_t ident = 0xFE;
-    data[offset++] = ident;
-    crc.add(ident);
+    CRC32 crc(CRC::Type::Seagate);
+    
+    // 0xA1 (MFM: with dropped clock)
+    crc.add(0xA1);
+    if (!hdd.isSeparatorRLL())
+    {
+      syncOffsets.push_back(offset * 8 + 5); // bit where to drop Ck2
+    }
+    else
+    {
+      syncOffsets.push_back(offset); // prepend RLL syncmark
+    }
+    data[offset++] = 0xA1;
+    
+    // IDENT 0xFE (MFM)
+    if (!hdd.isSeparatorRLL())
+    {
+      const uint8_t ident = 0xFE;
+      data[offset++] = ident;
+      crc.add(ident);  
+    }    
     
     // HEAD_CYLHI
     const uint8_t headCylHi = (uint8_t)head | ((cylinder & 0x300) >> 2);    
@@ -593,23 +676,41 @@ bool Seagate::formatWriteTrack(const std::vector<uint8_t>& interleave, const uin
     data[offset++] = crcPtr[1];
     data[offset++] = crcPtr[0];
     
-    // data field preamble: 15 bytes zeros
-    memset(data+offset, 0, 15);
-    offset += 15;
-    
-    crc.setInitial();
-    
-    // 0xA1 with dropped clock or RLL 0x8090 follows
-    crc.add(0xA1); // used with CRC computation for RLL, but 0xA1 is not physically written then
+    // data field preamble
     if (!hdd.isSeparatorRLL())
     {
-      syncOffsets.push_back(offset * 8 + 5); // bit where to drop Ck2
-      data[offset++] = 0xA1;
+      memset(data+offset, 0, 15); // MFM: 15 zeros
+      offset += 15;
     }
     else
     {
-      syncOffsets.push_back(offset); // byte offset for RLL 0x8090
+      // custom gap: RLL 011 repeated 8x
+      data[offset++] = 0x6D;
+      data[offset++] = 0xB6;
+      data[offset++] = 0xDB;
+      
+      // preamble: RLL 100100 repeated 16 times
+      for (uint8_t i = 0; i < 4; i++)
+      {
+        data[offset++] = 0x92;
+        data[offset++] = 0x49;
+        data[offset++] = 0x24;
+      }
     }
+    
+    crc.setInitial();
+    
+    // 0xA1 (MFM: with dropped clock)
+    crc.add(0xA1);
+    if (!hdd.isSeparatorRLL())
+    {
+      syncOffsets.push_back(offset * 8 + 5); // bit where to drop Ck2
+    }
+    else
+    {
+      syncOffsets.push_back(offset); // prepend RLL syncmark
+    }
+    data[offset++] = 0xA1;
     
     // DATA ident 0xF8
     data[offset++] = 0xF8;
@@ -617,9 +718,9 @@ bool Seagate::formatWriteTrack(const std::vector<uint8_t>& interleave, const uin
     
     // DATA
     const uint16_t pos = (logicalSector-startSector)*512;
+    uint8_t dataByte = hdd.isSeparatorRLL() ? 0xAA : 0x6C; // default format fill
     for (size_t i = 0; i < 512; i++)
     {
-      uint8_t dataByte = 0x6C; // default: format
       if (dataFields && (sec < sectorCount))
       {
         dataByte = dataFields[pos + i];
@@ -640,8 +741,8 @@ bool Seagate::formatWriteTrack(const std::vector<uint8_t>& interleave, const uin
     data[offset++] = 0;
     data[offset++] = 0;   
     
-    // 20 byte intersector gap
-    offset += 20;
+    // intersector gap
+    offset += hdd.isSeparatorRLL() ? 15 : 20;
   }
   
   // encode and prepare write DMA
@@ -675,7 +776,7 @@ bool Seagate::formatWriteReservedCylinder(uint8_t head, uint8_t interleave)
   // leave some slack (next /INDEX stops write)
   std::vector<uint8_t> track;
   const uint16_t maxTrackBytes = endec.getMaximumTrackBytes();
-  track.resize(maxTrackBytes, hdd.isSeparatorRLL() ? 0x33 : 0x4E); // fill with gap byte
+  track.resize(maxTrackBytes, hdd.isSeparatorRLL() ? 0xFF : 0x4E); // fill with gap byte
   
   // bit/byte offsets where special sync marks will appear
   std::vector<size_t> syncOffsets;  
@@ -691,28 +792,44 @@ bool Seagate::formatWriteReservedCylinder(uint8_t head, uint8_t interleave)
       break;
     }
     
-    // ID field preamble: 10 bytes zeros
-    memset(data+offset, 0, 10);
-    offset += 10;
-    
-    CRC32 crc(CRC::Type::Seagate);
-    
-    // 0xA1 with dropped clock or RLL 0x8090 follows
-    crc.add(0xA1); // used with CRC computation for RLL, but 0xA1 is not physically written then
+    // ID field preamble
     if (!hdd.isSeparatorRLL())
     {
-      syncOffsets.push_back(offset * 8 + 5); // bit where to drop Ck2
-      data[offset++] = 0xA1;
+      memset(data+offset, 0, 10); // MFM: 10 zeros
+      offset += 10;
     }
     else
     {
-      syncOffsets.push_back(offset); // byte offset for RLL 0x8090
+      // preamble: RLL 100100 repeated 16 times
+      for (uint8_t i = 0; i < 4; i++)
+      {
+        data[offset++] = 0x92;
+        data[offset++] = 0x49;
+        data[offset++] = 0x24;
+      }
     }
     
-    // IDENT 0xFE
-    const uint8_t ident = 0xFE;
-    data[offset++] = ident;
-    crc.add(ident);
+    CRC32 crc(CRC::Type::Seagate);
+    
+    // 0xA1 (MFM: with dropped clock)
+    crc.add(0xA1);
+    if (!hdd.isSeparatorRLL())
+    {
+      syncOffsets.push_back(offset * 8 + 5); // bit where to drop Ck2
+    }
+    else
+    {
+      syncOffsets.push_back(offset); // prepend RLL syncmark
+    }
+    data[offset++] = 0xA1;
+    
+    // IDENT 0xFE (MFM)
+    if (!hdd.isSeparatorRLL())
+    {
+      const uint8_t ident = 0xFE;
+      data[offset++] = ident;
+      crc.add(ident);  
+    }    
     
     // HEAD_CYLHI - 0xFF for the reserved cylinder
     const uint8_t headCylHi = 0xFF;    
@@ -750,23 +867,41 @@ bool Seagate::formatWriteReservedCylinder(uint8_t head, uint8_t interleave)
     data[offset++] = crcPtr[1];
     data[offset++] = crcPtr[0];
     
-    // data field preamble: 15 bytes zeros
-    memset(data+offset, 0, 15);
-    offset += 15;
-    
-    crc.setInitial();
-    
-    // 0xA1 with dropped clock or RLL 0x8090 follows
-    crc.add(0xA1); // used with CRC computation for RLL, but 0xA1 is not physically written then
+    // data field preamble
     if (!hdd.isSeparatorRLL())
     {
-      syncOffsets.push_back(offset * 8 + 5); // bit where to drop Ck2
-      data[offset++] = 0xA1;
+      memset(data+offset, 0, 15); // MFM: 15 zeros
+      offset += 15;
     }
     else
     {
-      syncOffsets.push_back(offset); // byte offset for RLL 0x8090
+      // custom gap: RLL 011 repeated 8x
+      data[offset++] = 0x6D;
+      data[offset++] = 0xB6;
+      data[offset++] = 0xDB;
+      
+      // preamble: RLL 100100 repeated 16 times
+      for (uint8_t i = 0; i < 4; i++)
+      {
+        data[offset++] = 0x92;
+        data[offset++] = 0x49;
+        data[offset++] = 0x24;
+      }
     }
+    
+    crc.setInitial();
+    
+    // 0xA1 (MFM: with dropped clock)
+    crc.add(0xA1);
+    if (!hdd.isSeparatorRLL())
+    {
+      syncOffsets.push_back(offset * 8 + 5); // bit where to drop Ck2
+    }
+    else
+    {
+      syncOffsets.push_back(offset); // prepend RLL syncmark
+    }
+    data[offset++] = 0xA1;
     
     // DATA ident 0xF8
     data[offset++] = 0xF8;
@@ -774,7 +909,7 @@ bool Seagate::formatWriteReservedCylinder(uint8_t head, uint8_t interleave)
     
     // DATA
     uint8_t dataField[512] = {0};
-    uint8_t customTrack[] = { 0xDA, 0xBE, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x06, 0x00, 0x03,
+    uint8_t customTrack[] = { 0xDA, 0xBE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x03,
                               0x00, 0x00, 0x53, 0x45, 0x41, 0x47, 0x41, 0x54, 0x45, 0x53, 0x45, 0x4E,
                               0x54, 0x49, 0x4E, 0x45, 0x4C, 0x00, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
                               0x20, 0x20, 0x20, 0x20 };
@@ -783,15 +918,15 @@ bool Seagate::formatWriteReservedCylinder(uint8_t head, uint8_t interleave)
     customTrack[2] = hdd.getParams()->Cylinders >> 8;
     customTrack[3] = hdd.getParams()->Cylinders;
     customTrack[4] = hdd.getParams()->Heads;
+    customTrack[5] = hdd.isSeparatorRLL() ? 26 : 17;
     customTrack[8] = interleave;
     customTrack[12] = hdd.getParams()->WritePrecompStartCyl >> 8;
     customTrack[13] = hdd.getParams()->WritePrecompStartCyl;
     memcpy(dataField, customTrack, sizeof(customTrack));
     
+    uint8_t dataByte = hdd.isSeparatorRLL() ? 0xAA : 0;
     for (size_t i = 0; i < 512; i++)
     {
-      uint8_t dataByte = 0;
-      
       if ((head < 2) && (sec < 2))
       {
         dataByte = dataField[i]; // written for head 0 sectors 0 and 1, and head 1 sectors 0 and 1 only
@@ -813,8 +948,8 @@ bool Seagate::formatWriteReservedCylinder(uint8_t head, uint8_t interleave)
     data[offset++] = 0;
     data[offset++] = 0;   
     
-    // 20 byte intersector gap
-    offset += 20;
+    // intersector gap
+    offset += hdd.isSeparatorRLL() ? 15 : 20;
   }
   
   // encode and prepare write DMA

@@ -84,12 +84,12 @@ public:
   bool lockPLL(uint32_t timeout_us);
   uint8_t findSync(uint16_t pattern, uint16_t& partial, uint8_t& bitShift);
   bool decodeMFM(uint8_t* out, size_t& count, uint16_t& partial, const uint8_t& bitShift, CRC* crc = NULL);
-  bool decodeRLL(uint8_t* out, size_t& count, const uint16_t& partial, const uint8_t& bitShift, CRC* crc = NULL, bool ignoreCodingErrors = false);  
+  bool decodeRLL(uint8_t* out, size_t& count, const uint16_t& partial, const uint8_t& bitShift, CRC* crc = NULL, bool ignoreCodingErrors = true);
   void setReadGate(bool on);
   
   // writing
   void encodeMFM(const uint8_t* input, size_t len, const std::vector<size_t>& dropClockBitOffsets, std::vector<uint32_t>& output);  
-  void encodeRLL(const uint8_t* input, size_t len, const std::vector<size_t>& insertSyncByteOffsets, std::vector<uint32_t>& output);
+  void encodeRLL(const uint8_t* input, size_t len, const std::vector<size_t>& insertSyncByteOffsets, std::vector<uint32_t>& output, bool seagateDATA = false);
   void prepareWriteDMA(const void* buffer, size_t words);
   bool writeWholeTrack();
   void setWriteGate(bool on);

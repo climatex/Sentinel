@@ -445,6 +445,17 @@ bool ENDEC::decodeRLL(uint8_t* out, size_t& count, const uint16_t& partial, cons
   uint32_t buffer = ((uint32_t)partial) << 16; // returned from findSync()
   int bufferBits = bitShift;
   
+  // Seagate syncs on RLL 0x8091: invalid RLL pattern 0x8090 | first 6 RLL bits of A1; already consumed by findSync()
+  // restore the six "010001" bits back into the buffer, instead of consuming A1
+  if (m_RLLCoding == RLLCoding::SeagateIBM)
+  {
+    const uint32_t extraLead = 0b010001;
+    const uint8_t extraLeadBits = 6;
+    
+    buffer = (extraLead << (32 - extraLeadBits)) | (buffer >> extraLeadBits);
+    bufferBits += extraLeadBits;
+  }
+  
   // each valid RLL codeword may produce a variable number of decoded NRZ bits (2, 3 or 4)
   // accumulate for full 8 bits at least
   uint32_t bitsAccumulated = 0;
@@ -465,7 +476,14 @@ bool ENDEC::decodeRLL(uint8_t* out, size_t& count, const uint16_t& partial, cons
       }
       if (!decodedBits)
       {
-        continue; // coding errors ignored: buffer is consumed 1 bit
+        // coding errors ignored, quick check for not ready/wfault
+        if (gpio_get(15) || !gpio_get(20))
+        {
+          count = idx;
+          return false;
+        }
+        
+        continue; // buffer is consumed 1 bit        
       }        
       
       bitsAccumulated = (bitsAccumulated << decodedBits) | decodedByte;
@@ -487,7 +505,7 @@ bool ENDEC::decodeRLL(uint8_t* out, size_t& count, const uint16_t& partial, cons
   return true;
 }
 
-void ENDEC::encodeRLL(const uint8_t* input, size_t len, const std::vector<size_t>& insertSyncByteOffsets, std::vector<uint32_t>& output)
+void ENDEC::encodeRLL(const uint8_t* input, size_t len, const std::vector<size_t>& insertSyncByteOffsets, std::vector<uint32_t>& output, bool seagateDATA)
 {
   output.clear();
   if (!len)
@@ -513,10 +531,27 @@ void ENDEC::encodeRLL(const uint8_t* input, size_t len, const std::vector<size_t
     }
     rllBitCount++;
   };
- 
-  // insertSyncByteOffsets: data buffer BYTE OFFSETS before which RLL 1000000010010000 should be inserted
-  // must be sorted ascending
-  static const uint8_t SYNC_BITS[] = { 1,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0 };
+  
+  // RLL sync marks
+  const std::vector<uint8_t> syncPatternWD  = { 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0 };       // WD ID, DATA
+  const std::vector<uint8_t> syncPatternST  = { 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0 };             // Seagate ID, 0xA1 needs to follow 
+  const std::vector<uint8_t> syncPatternST2 = { 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0 }; // Seagate DATA, 0xA1 needs to follow
+  bool toggle = seagateDATA;
+  auto getSyncBits = [&]() -> const std::vector<uint8_t>&
+  {
+    // WD
+    if (m_RLLCoding == RLLCoding::WD)
+    {
+      return syncPatternWD;
+    }
+    
+    // Seagate    
+    toggle = !toggle; // ID, DATA, ID, DATA
+    return toggle ? syncPatternST : syncPatternST2;
+  };
+  
+  // insertSyncByteOffsets: data buffer BYTE OFFSETS before which the RLL sync mark should be inserted
+  // must be sorted ascending 
   auto sync = insertSyncByteOffsets.begin();
   auto nextSyncFunc = [&]() -> size_t
   {
@@ -536,7 +571,8 @@ void ENDEC::encodeRLL(const uint8_t* input, size_t len, const std::vector<size_t
       ++sync;
       nextSync = nextSyncFunc();
       
-      for (uint8_t b : SYNC_BITS)
+      const std::vector<uint8_t>& syncBits = getSyncBits();
+      for (uint8_t b : syncBits)
       {
         pushRLLBit(b);
       }

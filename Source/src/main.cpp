@@ -297,6 +297,7 @@ int main()
       if (key == '\e') { printf("\n"); continue; }
       printf(str_EchoKey, key);
       hdd.setSeparatorRLL(key == 'R');
+      endec.setRLLCoding(ENDEC::RLLCoding::WD);
       
       format = new WD;
       
@@ -331,6 +332,18 @@ int main()
         printf(str_OptSgInvalidCylCount);
         continue;
       }
+      
+      // Seagate format specifics: data separator mode
+      printf(str_FormatSpecificOptions, "Seagate");
+      printf(str_EscGoBack);
+      
+      printf("\n");
+      printf(str_ChooseSeparatorMode, ((int)g_WclockRate == 5) ? str_MFM : str_RLL);
+      key = toupper(readKey("MR\e"));
+      if (key == '\e') { printf("\n"); continue; }
+      printf(str_EchoKey, key);
+      hdd.setSeparatorRLL(key == 'R');
+      endec.setRLLCoding(ENDEC::RLLCoding::SeagateIBM);
       
       format = new Seagate;
       

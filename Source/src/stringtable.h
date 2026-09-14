@@ -54,7 +54,7 @@ STRINGTABLE str_StartSector[]             = "Starting sector: %u\n";
 
 // startup
 STRINGTABLE str_Splash[]                  = "Sentinel (c) 2026 J. Bogin, https://boginjr.com\n\n"
-                                            "Build date:     05 Sep 2026\n";
+                                            "Build date:     14 Sep 2026\n";
 STRINGTABLE str_SystemInfo[]              = "System clock:   %u MHz (Vreg %.1f V; %d \u00B0C)\n";
 STRINGTABLE str_MemoryUsage[]             = "Memory usage:   initial %uKB of 512KB RAM\n"
                                             "                %uKB of 4MB flash\n";
@@ -95,7 +95,7 @@ STRINGTABLE str_DiskCfgCorrectCRC[]       = "\nCorrect CRC errors:    ";
 // main menu
 STRINGTABLE str_MainMenu[]                = "Select low-level format:               Special options:\n\n"
                                             "1) Western Digital, MFM/RLL, generic   A) Autodetect format\n"
-                                            "2) Seagate ST21/ST22, MFM, PC/AT       B) Raw disk operations\n"
+                                            "2) Seagate ST21/ST22, MFM/RLL, PC/AT   B) Raw disk operations\n"
                                             "3) SMS OMTI, MFM, PC/AT                C) Erase disk\n"
                                             "4) Xebec/Adaptec, MFM, PC/XT           D) Heads seek test / exercise\n"
                                             "5) SMC HDC9224, MFM, PC/XT             E) RPM test\n"

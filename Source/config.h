@@ -24,7 +24,7 @@
 #define MAX_SPT_LIMIT               50      // maximum number of sectors per track supported, for all sector sizes
 
 // low-level formats
-#define READ_SECTOR_ATTEMPTS        10      // how many attempts to read a sector (if it has been found) before failing
+#define READ_SECTOR_ATTEMPTS        15      // how many attempts to read a sector (if it has been found) before failing
 #define RECOVERY_MODE_MICROSTEPS    8       // Recovery Mode (Seagate) microstepping: maximum number of how many microstep algorithms to try
 
 // UI defines

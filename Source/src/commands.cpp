@@ -188,6 +188,8 @@ void commandAutodetect()
   for (uint8_t attempt = 0; attempt < 2; attempt++)
   {
     hdd.setSeparatorRLL(attempt == 1);
+    endec.setRLLCoding(ENDEC::RLLCoding::WD);
+    
     wd = new WD;
     wd->setSdh4Bit(true); // detect if extended to 4    
     
@@ -368,20 +370,29 @@ void commandAutodetect()
   {
     hdd.seekDrive(1, 0);
     seagate = new Seagate;
-    if (seagate->analyzeTrack(MAX_SPT_LIMIT, false, sectorsPerTrack, startSector, sectorSizeBytes, interleave))
+    
+    // MFM first, then RLL
+    for (uint8_t attempt = 0; attempt < 2; attempt++)
     {
-      printf(str_DetectFormat);
-      printf("Seagate");
-          
-      printf("\n");
-      delete seagate;
-      seagate = NULL;
-      return;
+      hdd.setSeparatorRLL(attempt == 1);
+      endec.setRLLCoding(ENDEC::RLLCoding::SeagateIBM);
+      
+      if (seagate->analyzeTrack(MAX_SPT_LIMIT, false, sectorsPerTrack, startSector, sectorSizeBytes, interleave))
+      {
+        printf(str_DetectFormat);
+        printf("Seagate (%s)", hdd.isSeparatorRLL() ? str_RLL : str_MFM);
+            
+        printf("\n");
+        delete seagate;
+        seagate = NULL;
+        return;
+      }
     }
 
     delete seagate;
     seagate = NULL; 
     hdd.seekDrive(0, 0);
+    hdd.setSeparatorRLL(false);
   }
   
   // we tried :)
