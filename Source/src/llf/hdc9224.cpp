@@ -146,7 +146,7 @@ bool HDC9224::scanID(uint16_t* cylinder, uint8_t* head, uint8_t* sector, uint16_
   }
   
   const uint64_t startCount = g_IndexCount;
-  while ((g_IndexCount - startCount) < 2)
+  while ((g_IndexCount - startCount) < 5)
   {
     CRC16 crc(CRC::Type::CCITT);
     if (m_CrcInitialZeros)
@@ -250,7 +250,7 @@ bool HDC9224::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrid
       hdd.seekDrive(cyl, hd);        
     }
     
-    for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT; locateAttempt++)
+    for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT*2; locateAttempt++)
     {
       uint16_t scanCyl;
       uint8_t scanHead;
@@ -400,7 +400,7 @@ bool HDC9224::writeSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overri
   uint8_t head = overrideHead ? *overrideHead : hdd.getPhysicalHead();  
 
   bool found = false;  
-  for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT; locateAttempt++)
+  for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT*2; locateAttempt++)
   {
     uint16_t scanCyl;
     uint8_t scanHead;

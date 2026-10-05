@@ -1,8 +1,8 @@
 diff --git a/Source/src/commands.cpp b/Source/src/commands.cpp
-index 6c4fbb1..c2b1ae9 100644
+index c353cf2..8389287 100644
 --- a/Source/src/commands.cpp
 +++ b/Source/src/commands.cpp
-@@ -2361,19 +2361,7 @@ void commandMicrostep()
+@@ -2395,19 +2395,7 @@ void commandMicrostep()
    }
    
    printf(str_MicrostepDescription);
@@ -101,7 +101,7 @@ index 59ac8f4..9a8a45d 100644
  };
 \ No newline at end of file
 diff --git a/Source/src/main.cpp b/Source/src/main.cpp
-index 6421e2f..0f54120 100644
+index 4e6574f..2b9468c 100644
 --- a/Source/src/main.cpp
 +++ b/Source/src/main.cpp
 @@ -175,20 +175,21 @@ int main()
@@ -132,7 +132,7 @@ index 6421e2f..0f54120 100644
    // set initial states of the output shift register 74HC595
    // (Q0: HDSEL0, Q1: HDSEL1, Q2: HDSEL2, Q3: HDSEL3, Q4: STEP, Q5: DIR, Q6: DS, Q7: RLL/MFM)
 diff --git a/Source/src/stringtable.h b/Source/src/stringtable.h
-index 1758af0..bd92858 100644
+index 80025a5..3804125 100644
 --- a/Source/src/stringtable.h
 +++ b/Source/src/stringtable.h
 @@ -226,9 +226,9 @@ STRINGTABLE str_WriteDetailsFormat[]      = "\nWill format %u cylinders.\n";

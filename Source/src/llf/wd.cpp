@@ -271,7 +271,7 @@ bool WD::scanID(uint16_t* cylinder, uint8_t* sdh, uint8_t* sector, uint16_t* res
   }
   
   const uint64_t startCount = g_IndexCount;
-  while ((g_IndexCount - startCount) < 2)
+  while ((g_IndexCount - startCount) < 5)
   {
     CRC16 crc(CRC::Type::CCITT);
     
@@ -421,7 +421,7 @@ bool WD::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrideHead
       hdd.seekDrive(cyl, hd);        
     }
     
-    for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT; locateAttempt++)
+    for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT*2; locateAttempt++)
     {
       uint16_t scanCyl;
       uint8_t scanSdh;
@@ -616,7 +616,7 @@ bool WD::writeSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrideHea
   sdhToMatch |= head & (m_Sdh4Bit ? 0xF : 7);
   
   bool found = false;  
-  for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT; locateAttempt++)
+  for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT*2; locateAttempt++)
   {
     uint16_t scanCyl;
     uint8_t scanSdh;

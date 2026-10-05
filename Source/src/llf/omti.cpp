@@ -139,7 +139,7 @@ bool OMTI::scanID(uint16_t* cylinder, uint8_t* head, uint8_t* sector, uint16_t* 
   }
   
   const uint64_t startCount = g_IndexCount;
-  while ((g_IndexCount - startCount) < 2)
+  while ((g_IndexCount - startCount) < 5)
   {
     CRC32 crc(CRC::Type::OMTI_ID);
     
@@ -234,7 +234,7 @@ bool OMTI::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrideHe
       hdd.seekDrive(cyl, hd);        
     }
     
-    for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT; locateAttempt++)
+    for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT*2; locateAttempt++)
     {
       uint16_t scanCyl;
       uint8_t scanHead;
@@ -379,7 +379,7 @@ bool OMTI::writeSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrideH
   uint8_t head = overrideHead ? *overrideHead : hdd.getPhysicalHead();  
 
   bool found = false;  
-  for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT; locateAttempt++)
+  for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT*2; locateAttempt++)
   {
     uint16_t scanCyl;
     uint8_t scanHead;

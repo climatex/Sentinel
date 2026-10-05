@@ -14,8 +14,8 @@
 // timeouts
 #define TIMEOUT_STARTUP_READY_MS    100     // during powerup test, minimum time for disk to signal /READY to be considered such
 #define TIMEOUT_SEEK_COMPLETE_MS    500     // seek must be complete within half a second of last pulse sent
-#define TIMEOUT_DISK_ROTATION_US    17333   // nominal: 16.67ms @ 3600RPM
-#define TIMEOUT_FIFO_READS_US       30      // max. time to wait for 16 bits from PIO during disk reads
+#define TIMEOUT_DISK_ROTATION_US    17500   // nominal: 16.67ms @ 3600RPM
+#define TIMEOUT_FIFO_READS_US       50      // max. time to wait for 16 bits from PIO during disk reads
 #define TIMEOUT_DATA_PREAMBLE_US    15      // max. time to wait for DRUN after a sector ID field has been read and verified
 
 // encoder/decoder

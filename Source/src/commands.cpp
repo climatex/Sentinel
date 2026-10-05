@@ -1581,7 +1581,11 @@ void commandRead(bool verifyOnly)
     expectedSectorsPerTrack = (uint8_t)atoi(promptStr);
     if (expectedSectorsPerTrack <= MAX_SPT_LIMIT)
     {  
-      if (!expectedSectorsPerTrack && !strlen(getPromptBuffer())) printf("0");
+      if (!expectedSectorsPerTrack && !strlen(getPromptBuffer())) // ENTER on empty prompt, use default value
+      {
+        printf("%u", expectedSptDefault);
+        expectedSectorsPerTrack = expectedSptDefault;        
+      }        
       printf("\n");
       break;
     }    
@@ -1601,7 +1605,7 @@ void commandRead(bool verifyOnly)
   uint16_t expectedStartSector = (uint16_t)-1;
   if (expectedSectorsPerTrack)
   {
-    const uint8_t max = 256-sectorsPerTrack;
+    const uint8_t max = 256-expectedSectorsPerTrack;
     printf(str_ReadExpectedStartSec, expectedSectorsPerTrack);
     
     while(true)
@@ -1616,10 +1620,12 @@ void commandRead(bool verifyOnly)
       uint16_t expected = (uint16_t)atoi(promptStr);
       if (expected <= max)
       {  
-        if (!expected && !strlen(getPromptBuffer())) printf("0");
-        expectedStartSector = expected;
-        printf("\n");
-        break;
+        if (expected || strlen(getPromptBuffer())) // repeat if ENTER on empty prompt
+        {
+          expectedStartSector = expected;
+          printf("\n");
+          break;
+        }        
       }    
       printf(str_DeleteLine);
     }
@@ -1746,6 +1752,10 @@ _afterSeek:
         }
         
         // timeout, not ready, write fault
+        if (!verifyOnly)
+        {
+          sdCloseFile();
+        }
         printf("\n");
         return;
       }
@@ -2137,7 +2147,7 @@ void commandWrite(bool formatOnly)
       if (start <= startSectorMax)
       {  
         startSector = start;
-        if (!startSector && !strlen(getPromptBuffer())) printf("0");
+        if (!startSector && !strlen(getPromptBuffer())) printf("0"); // ENTER on empty prompt: use default 0
         printf("\n");
         break;
       }    

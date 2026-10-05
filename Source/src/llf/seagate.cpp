@@ -162,7 +162,7 @@ bool Seagate::scanID(uint16_t* cylinder, uint8_t* head, uint8_t* sector, uint16_
   }
   
   const uint64_t startCount = g_IndexCount;
-  while ((g_IndexCount - startCount) < 2)
+  while ((g_IndexCount - startCount) < 5)
   {
     // MFM: 1st byte A1 consumed by findSync() and not part of the read
     const uint8_t idCompare = hdd.isSeparatorRLL() ? 0xA1 : 0xFE;    
@@ -318,12 +318,7 @@ bool Seagate::readSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overrid
       hdd.seekDrive(cyl, hd);        
     }
     
-    uint8_t locateAttempts = MAX_SPT_LIMIT;
-    if (hdd.isSeparatorRLL())
-    {
-      locateAttempts *= 2;
-    }
-    for (uint8_t locateAttempt = 0; locateAttempt < locateAttempts; locateAttempt++)
+    for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT*2; locateAttempt++)
     {
       uint16_t scanCyl;
       uint8_t scanHead;
@@ -508,12 +503,7 @@ bool Seagate::writeSector(uint8_t sector, uint16_t* overrideCyl, uint8_t* overri
   uint8_t head = overrideHead ? *overrideHead : hdd.getPhysicalHead();  
 
   bool found = false;
-  uint8_t locateAttempts = MAX_SPT_LIMIT;
-  if (hdd.isSeparatorRLL())
-  {
-    locateAttempts *= 2;
-  }
-  for (uint8_t locateAttempt = 0; locateAttempt < locateAttempts; locateAttempt++)
+  for (uint8_t locateAttempt = 0; locateAttempt < MAX_SPT_LIMIT*2; locateAttempt++)
   {
     uint16_t scanCyl;
     uint8_t scanHead;
